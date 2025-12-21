@@ -259,6 +259,28 @@ export default function Home() {
                 ),
                 th: ({ node, ...props }) => <th className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-2 text-left print:bg-zinc-100 print:border-zinc-400" {...props} />,
                 td: ({ node, ...props }) => <td className="border border-zinc-300 dark:border-zinc-700 p-2 print:border-zinc-400" {...props} />,
+                pre: ({ node, ...props }) => (
+                  <pre 
+                    className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-md border border-zinc-200 dark:border-zinc-800 text-sm font-mono my-4 print:bg-zinc-50 print:border-zinc-300 print:text-xs"
+                    style={{ 
+                      whiteSpace: 'pre-wrap', 
+                      wordBreak: 'break-all',
+                      overflowWrap: 'anywhere'
+                    }}
+                    {...props} 
+                  />
+                ),
+                code: ({ node, ...props }) => (
+                  <code 
+                    className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded font-mono text-sm print:bg-zinc-100"
+                    style={{ 
+                      whiteSpace: 'pre-wrap', 
+                      wordBreak: 'break-all',
+                      overflowWrap: 'anywhere'
+                    }}
+                    {...props} 
+                  />
+                ),
               }}
             >
               {report}
