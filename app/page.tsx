@@ -127,7 +127,7 @@ export default function Home() {
             <label className="text-sm font-medium">The Context</label>
             <textarea
               autoCapitalize="off"
-              className="w-full p-2 min-h-[100px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              className="w-full p-2 min-h-[100px] max-h-[400px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y"
               placeholder="Describe the context of these implementations..."
               value={context}
               onChange={(e) => setContext(e.target.value)}
@@ -189,18 +189,20 @@ export default function Home() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Code</label>
                 <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden font-mono text-sm bg-zinc-50 dark:bg-zinc-950">
-                  <Editor
-                    value={snippet.content}
-                    onValueChange={(content) => updateSnippet(snippet.id, { content })}
-                    highlight={(code) => highlight(code, snippet.language === "python" ? languages.python : languages.javascript, snippet.language)}
-                    padding={16}
-                    className="min-h-[200px]"
-                    textareaClassName="outline-none"
-                    style={{
-                      fontFamily: '"Fira code", "Fira Mono", monospace',
-                      fontSize: 14,
-                    }}
-                  />
+                  <div className="min-h-[200px] max-h-[400px] overflow-auto resize-y">
+                    <Editor
+                      value={snippet.content}
+                      onValueChange={(content) => updateSnippet(snippet.id, { content })}
+                      highlight={(code) => highlight(code, snippet.language === "python" ? languages.python : languages.javascript, snippet.language)}
+                      padding={16}
+                      className="min-h-full"
+                      textareaClassName="outline-none"
+                      style={{
+                        fontFamily: '"Fira code", "Fira Mono", monospace',
+                        fontSize: 14,
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
