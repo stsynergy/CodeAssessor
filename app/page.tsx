@@ -10,8 +10,8 @@ import "prismjs/themes/prism-tomorrow.css";
 import { Plus, Trash2, FileText, Loader2, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
+import { useReactToPrint } from "react-to-print";
+import { useRef } from "react";
 
 interface Snippet {
   id: string;
@@ -30,6 +30,22 @@ export default function Home() {
   const [report, setReport] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useReactToPrint({
+    contentRef: reportRef,
+    documentTitle: `${thingName || "Architectural-Assessment"}-Report`,
+    pageStyle: `
+      @page {
+        margin: 20mm;
+      }
+      @media print {
+        body {
+          -webkit-print-color-adjust: exact;
+        }
+      }
+    `,
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -79,21 +95,6 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const exportToPDF = async () => {
-    const element = document.getElementById("report-content");
-    if (!element) return;
-
-    const canvas = await html2canvas(element, { scale: 2 });
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
-    const imgProps = pdf.getImageProperties(imgData);
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`${thingName || "Architectural-Assessment"}-Report.pdf`);
   };
 
   if (!mounted) {
@@ -230,7 +231,7 @@ export default function Home() {
           <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
             <h2 className="text-2xl font-bold">Architectural Assessment Report</h2>
             <button
-              onClick={exportToPDF}
+              onClick={() => handlePrint()}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors text-sm font-medium shadow-sm"
             >
               <Download size={16} /> Export as PDF
@@ -238,24 +239,24 @@ export default function Home() {
           </div>
           
           <div
-            id="report-content"
-            className="prose prose-zinc dark:prose-invert max-w-none p-8 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm"
+            ref={reportRef}
+            className="prose prose-zinc dark:prose-invert max-w-none p-8 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm print:shadow-none print:border-none print:p-0 print:text-black print:prose-zinc"
           >
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                h1: ({ node, ...props }) => <h1 className="text-3xl font-bold mt-8 mb-4 border-b pb-2" {...props} />,
+                h1: ({ node, ...props }) => <h1 className="text-3xl font-bold mt-8 mb-4 border-b pb-2 print:border-zinc-300" {...props} />,
                 h2: ({ node, ...props }) => <h2 className="text-2xl font-semibold mt-6 mb-3" {...props} />,
                 h3: ({ node, ...props }) => <h3 className="text-xl font-medium mt-4 mb-2" {...props} />,
                 ul: ({ node, ...props }) => <ul className="list-disc pl-5 space-y-1 mb-4" {...props} />,
                 ol: ({ node, ...props }) => <ol className="list-decimal pl-5 space-y-1 mb-4" {...props} />,
                 table: ({ node, ...props }) => (
                   <div className="overflow-x-auto my-6">
-                    <table className="w-full border-collapse border border-zinc-300 dark:border-zinc-700" {...props} />
+                    <table className="w-full border-collapse border border-zinc-300 dark:border-zinc-700 print:border-zinc-400" {...props} />
                   </div>
                 ),
-                th: ({ node, ...props }) => <th className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-2 text-left" {...props} />,
-                td: ({ node, ...props }) => <td className="border border-zinc-300 dark:border-zinc-700 p-2" {...props} />,
+                th: ({ node, ...props }) => <th className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-2 text-left print:bg-zinc-100 print:border-zinc-400" {...props} />,
+                td: ({ node, ...props }) => <td className="border border-zinc-300 dark:border-zinc-700 p-2 print:border-zinc-400" {...props} />,
               }}
             >
               {report}
