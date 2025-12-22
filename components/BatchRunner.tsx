@@ -578,9 +578,9 @@ export const BatchRunner: React.FC = () => {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-12 gap-6">
+      <div className="grid lg:grid-cols-12 gap-y-6 gap-x-0">
         {/* Subjects Column */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-4 pr-1">
           <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Tasks</h3>
           <div className="space-y-1 max-h-[70vh] overflow-y-auto pr-2">
             {subjects.map((s) => (
@@ -597,7 +597,7 @@ export const BatchRunner: React.FC = () => {
         </div>
 
         {/* Trials Column */}
-        <div className="lg:col-span-1 space-y-4 border-l pl-4 border-zinc-200 dark:border-zinc-800">
+        <div className="lg:col-span-1 space-y-4 border-l pl-1 border-zinc-200 dark:border-zinc-800">
           <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Trials</h3>
           <div className="space-y-2">
             {trials.map((t, idx) => (
@@ -619,7 +619,7 @@ export const BatchRunner: React.FC = () => {
         </div>
 
         {/* Workspace Column */}
-        <div className="lg:col-span-9">
+        <div className="lg:col-span-9 pl-6">
           {selectedSubject ? (
             <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col min-h-[75vh]">
               {/* Toolbar */}
@@ -734,7 +734,7 @@ export const BatchRunner: React.FC = () => {
 
                   {activeTrial ? (
                     activeTrial.result ? (
-                      <div className="space-y-8">
+                      <div className="space-y-8 min-w-0">
                         {/* Unified Score Bar - Immediate Feedback */}
                         <div className="bg-zinc-50 dark:bg-zinc-950 p-6 rounded-xl border border-zinc-100 dark:border-zinc-800">
                           <div className="flex items-center justify-between mb-4">
@@ -762,20 +762,41 @@ export const BatchRunner: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="bg-white dark:bg-zinc-900 p-8 md:p-12 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm min-h-[842px]">
-                          <div className="prose prose-zinc dark:prose-invert max-w-none text-sm leading-relaxed">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                              h1: ({...props}) => <h1 className="text-3xl font-bold mt-8 mb-4 border-b pb-2" {...props} />,
-                              h2: ({...props}) => <h2 className="text-2xl font-semibold mt-6 mb-3" {...props} />,
-                              table: ({...props}) => <div className="overflow-x-auto my-6"><table className="w-full border-collapse border border-zinc-300 dark:border-zinc-700" {...props} /></div>,
-                              th: ({...props}) => <th className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-2 text-left" {...props} />,
-                              td: ({...props}) => <td className="border border-zinc-300 dark:border-zinc-700 p-2" {...props} />,
-                              pre: ({...props}) => <pre className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-md border border-zinc-200 dark:border-zinc-800 text-sm font-mono my-4" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} {...props} />,
-                            }}>
-                              {activeTrial.result.reportMarkdown}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
+                      <div className="bg-white dark:bg-zinc-900 p-8 md:p-12 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm min-h-[842px] prose prose-zinc dark:prose-invert max-w-none min-w-0">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                          h1: ({...props}) => <h1 className="text-3xl font-bold mt-8 mb-4 border-b pb-2" {...props} />,
+                          h2: ({...props}) => <h2 className="text-2xl font-semibold mt-6 mb-3" {...props} />,
+                          table: ({...props}) => (
+                            <div className="overflow-x-auto my-6">
+                              <table className="w-full border-collapse border border-zinc-300 dark:border-zinc-700" {...props} />
+                            </div>
+                          ),
+                          th: ({...props}) => <th className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-2 text-left" {...props} />,
+                          td: ({...props}) => <td className="border border-zinc-300 dark:border-zinc-700 p-2" {...props} />,
+                          pre: ({ ...props }) => (
+                            <pre 
+                              className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-md border border-zinc-200 dark:border-zinc-800 text-sm font-mono my-4"
+                              style={{ 
+                                whiteSpace: 'pre-wrap',
+                                width: '100%',
+                                display: 'block',
+                                boxSizing: 'border-box'
+                              }}
+                              {...props} 
+                            />
+                          ),
+                          code: ({ ...props }) => (
+                            <code 
+                              style={{ 
+                                whiteSpace: 'pre-wrap'
+                              }}
+                              {...props} 
+                            />
+                          ),
+                        }}>
+                          {activeTrial.result.reportMarkdown}
+                        </ReactMarkdown>
+                      </div>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center py-40 text-zinc-300 border-2 border-dashed rounded-2xl"><Code size={48} className="mb-4 opacity-10" /><p className="text-sm font-medium">Ready for trial #{trials.indexOf(activeTrial) + 1}</p></div>
