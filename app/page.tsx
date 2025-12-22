@@ -4,8 +4,17 @@ import { useState, useEffect } from "react";
 import Editor from "react-simple-code-editor";
 import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-clike";
+import "prismjs/components/prism-markup";
+import "prismjs/components/prism-markup-templating";
 import "prismjs/components/prism-javascript";
+import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-python";
+import "prismjs/components/prism-c";
+import "prismjs/components/prism-cpp";
+import "prismjs/components/prism-java";
+import "prismjs/components/prism-csharp";
+import "prismjs/components/prism-php";
+import "prismjs/components/prism-rust";
 import "prismjs/themes/prism-tomorrow.css";
 import { Plus, Trash2, FileText, Loader2, Download, Settings2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -17,8 +26,9 @@ interface Snippet {
   id: string;
   name: string;
   content: string;
-  language: "javascript" | "python";
 }
+
+type Language = "javascript" | "typescript" | "python" | "c" | "cpp" | "java" | "csharp" | "php" | "rust";
 
 interface Provider {
   id: string;
@@ -30,9 +40,10 @@ export default function Home() {
   const [thingName, setThingName] = useState("");
   const [context, setContext] = useState("");
   const [snippets, setSnippets] = useState<Snippet[]>([
-    { id: "1", name: "Implementation 1", content: "", language: "javascript" },
-    { id: "2", name: "Implementation 2", content: "", language: "javascript" },
+    { id: "1", name: "Implementation 1", content: "" },
+    { id: "2", name: "Implementation 2", content: "" },
   ]);
+  const [selectedLanguage, setSelectedLanguage] = useState<Language>("javascript");
   const [report, setReport] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -93,7 +104,6 @@ export default function Home() {
         id: Math.random().toString(36).substr(2, 9),
         name: `Implementation ${snippets.length + 1}`,
         content: "",
-        language: "javascript",
       },
     ]);
   };
@@ -119,7 +129,7 @@ export default function Home() {
         body: JSON.stringify({ 
           thingName, 
           context, 
-          snippets,
+          snippets: snippets.map(s => ({ ...s, language: selectedLanguage })),
           providerId: selectedProviderId,
           modelId: selectedModelId
         }),
@@ -157,27 +167,21 @@ export default function Home() {
         {/* Info Section */}
         <div className="grid gap-6 p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <div className="grid gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">The Thing Name</label>
-              <input
-                type="text"
-                autoCapitalize="off"
-                className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                placeholder="e.g. Auth Service, Data Fetcher..."
-                value={thingName}
-                onChange={(e) => setThingName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">The Context</label>
-              <textarea
-                autoCapitalize="off"
-                className="w-full p-2 min-h-[100px] max-h-[150px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y"
-                placeholder="Describe the context..."
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-              />
-            </div>
+            <input
+              type="text"
+              autoCapitalize="off"
+              className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+              placeholder="The Thing Name (e.g. Auth Service, Data Fetcher...)"
+              value={thingName}
+              onChange={(e) => setThingName(e.target.value)}
+            />
+            <textarea
+              autoCapitalize="off"
+              className="w-full p-2 min-h-[100px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y"
+              placeholder="Context (Describe what it suppose to be: requirements, constraints, or goals...)"
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+            />
           </div>
         </div>
 
@@ -185,43 +189,45 @@ export default function Home() {
         <div className="grid gap-6 p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <Settings2 size={18} className="text-zinc-500" />
-            <h3 className="font-semibold">Model Configuration</h3>
+            <h3 className="font-semibold">Who will do it</h3>
           </div>
           <div className="grid gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">LLM Provider</label>
-              <select
-                className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                value={selectedProviderId}
-                onChange={handleProviderChange}
-                disabled={availableProviders.length === 0}
-              >
-                {availableProviders.length === 0 ? (
-                  <option>No providers configured</option>
-                ) : (
-                  availableProviders.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium min-w-[70px]">Provider</label>
+              <div className="flex-1 space-y-2">
+                <select
+                  className="w-full p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  value={selectedProviderId}
+                  onChange={handleProviderChange}
+                  disabled={availableProviders.length === 0}
+                >
+                  {availableProviders.length === 0 ? (
+                    <option className="bg-white dark:bg-zinc-900">No providers configured</option>
+                  ) : (
+                    availableProviders.map((p) => (
+                      <option key={p.id} value={p.id} className="bg-white dark:bg-zinc-900">
+                        {p.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                {availableProviders.length === 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Configure API keys in config/api.ts.
+                  </p>
                 )}
-              </select>
-              {availableProviders.length === 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Configure API keys in config/api.ts to enable more providers.
-                </p>
-              )}
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Model</label>
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium min-w-[70px]">Model</label>
               <select
-                className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                 value={selectedModelId}
                 onChange={(e) => setSelectedModelId(e.target.value)}
                 disabled={!currentProvider}
               >
                 {currentProvider?.models.map((m) => (
-                  <option key={m.id} value={m.id}>
+                  <option key={m.id} value={m.id} className="bg-white dark:bg-zinc-900">
                     {m.name}
                   </option>
                 ))}
@@ -232,8 +238,28 @@ export default function Home() {
       </div>
 
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Implementations</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <h2 className="text-xl font-semibold whitespace-nowrap">Implementations</h2>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-zinc-500">Language:</label>
+              <select
+                className="p-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm min-w-[120px]"
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value as Language)}
+              >
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="python">Python</option>
+                <option value="java">Java</option>
+                <option value="c">C</option>
+                <option value="cpp">C++</option>
+                <option value="csharp">C#</option>
+                <option value="php">PHP</option>
+                <option value="rust">Rust</option>
+              </select>
+            </div>
+          </div>
           <button
             onClick={addSnippet}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-md transition-colors text-sm font-medium"
@@ -251,50 +277,47 @@ export default function Home() {
               {snippets.length > 2 && (
                 <button
                   onClick={() => removeSnippet(snippet.id)}
-                  className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 transition-colors"
+                  className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 transition-colors z-10"
                 >
                   <Trash2 size={18} />
                 </button>
               )}
               
-              <div className="grid grid-cols-[1fr,auto] gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Implementation Name</label>
-                  <input
-                    type="text"
-                    autoCapitalize="off"
-                    className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                    value={snippet.name}
-                    onChange={(e) => updateSnippet(snippet.id, { name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Language</label>
-                  <select
-                    className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                    value={snippet.language}
-                    onChange={(e) => updateSnippet(snippet.id, { language: e.target.value as any })}
-                  >
-                    <option value="javascript">JavaScript/TS</option>
-                    <option value="python">Python</option>
-                  </select>
-                </div>
-              </div>
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  autoCapitalize="off"
+                  className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                  placeholder="Implementation Name (e.g. Standard, Optimized...)"
+                  value={snippet.name}
+                  onChange={(e) => updateSnippet(snippet.id, { name: e.target.value })}
+                />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Code</label>
                 <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden font-mono text-sm bg-zinc-50 dark:bg-zinc-950">
-                  <div className="min-h-[200px] max-h-[400px] overflow-auto resize-y">
+                  <div 
+                    className="min-h-[200px] overflow-auto resize-y cursor-text"
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
+                        const textarea = e.currentTarget.querySelector('textarea');
+                        textarea?.focus();
+                      }
+                    }}
+                  >
                     <Editor
                       value={snippet.content}
                       onValueChange={(content) => updateSnippet(snippet.id, { content })}
-                      highlight={(code) => highlight(code, snippet.language === "python" ? languages.python : languages.javascript, snippet.language)}
+                      highlight={(code) => {
+                        const grammar = languages[selectedLanguage] || languages.javascript;
+                        return highlight(code, grammar, selectedLanguage);
+                      }}
                       padding={16}
                       className="min-h-full"
                       textareaClassName="outline-none"
+                      placeholder="Paste or write your code implementation here..."
                       style={{
                         fontFamily: '"Fira code", "Fira Mono", monospace',
                         fontSize: 14,
+                        minHeight: '200px',
                       }}
                     />
                   </div>
