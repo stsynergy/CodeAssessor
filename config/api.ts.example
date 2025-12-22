@@ -1,2 +1,4 @@
+export const OPENAI_API_KEY = "YOUR_API_KEY_HERE";
+export const ANTHROPIC_API_KEY = "YOUR_API_KEY_HERE";
 export const GOOGLE_GENERATIVE_AI_API_KEY = "YOUR_API_KEY_HERE";
-
+export const XAI_API_KEY = "YOUR_API_KEY_HERE"; // Grok

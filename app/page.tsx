@@ -7,7 +7,7 @@ import "prismjs/components/prism-clike";
 import "prismjs/components/prism-javascript";
 import "prismjs/components/prism-python";
 import "prismjs/themes/prism-tomorrow.css";
-import { Plus, Trash2, FileText, Loader2, Download } from "lucide-react";
+import { Plus, Trash2, FileText, Loader2, Download, Settings2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReactToPrint } from "react-to-print";
@@ -18,6 +18,12 @@ interface Snippet {
   name: string;
   content: string;
   language: "javascript" | "python";
+}
+
+interface Provider {
+  id: string;
+  name: string;
+  models: { id: string; name: string }[];
 }
 
 export default function Home() {
@@ -31,6 +37,11 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // New state for providers and models
+  const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState("");
 
   const handlePrint = useReactToPrint({
     contentRef: reportRef,
@@ -49,7 +60,31 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true);
+    fetchProviders();
   }, []);
+
+  const fetchProviders = async () => {
+    try {
+      const response = await fetch("/api/providers");
+      const data = await response.json();
+      if (data.providers && data.providers.length > 0) {
+        setAvailableProviders(data.providers);
+        setSelectedProviderId(data.providers[0].id);
+        setSelectedModelId(data.providers[0].models[0].id);
+      }
+    } catch (error) {
+      console.error("Failed to fetch providers:", error);
+    }
+  };
+
+  const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const providerId = e.target.value;
+    setSelectedProviderId(providerId);
+    const provider = availableProviders.find((p) => p.id === providerId);
+    if (provider && provider.models.length > 0) {
+      setSelectedModelId(provider.models[0].id);
+    }
+  };
 
   const addSnippet = () => {
     setSnippets([
@@ -81,7 +116,13 @@ export default function Home() {
       const response = await fetch("/api/assess", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ thingName, context, snippets }),
+        body: JSON.stringify({ 
+          thingName, 
+          context, 
+          snippets,
+          providerId: selectedProviderId,
+          modelId: selectedModelId
+        }),
       });
 
       const data = await response.json();
@@ -101,6 +142,8 @@ export default function Home() {
     return <div className="min-h-screen bg-gray-50 dark:bg-zinc-950" />;
   }
 
+  const currentProvider = availableProviders.find(p => p.id === selectedProviderId);
+
   return (
     <main className="min-h-screen p-8 max-w-5xl mx-auto space-y-8 bg-gray-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       <div className="space-y-4">
@@ -110,28 +153,80 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="grid gap-6 p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">The Thing Name</label>
-            <input
-              type="text"
-              autoCapitalize="off"
-              className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-              placeholder="e.g. Auth Service, Data Fetcher..."
-              value={thingName}
-              onChange={(e) => setThingName(e.target.value)}
-            />
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Info Section */}
+        <div className="grid gap-6 p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">The Thing Name</label>
+              <input
+                type="text"
+                autoCapitalize="off"
+                className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                placeholder="e.g. Auth Service, Data Fetcher..."
+                value={thingName}
+                onChange={(e) => setThingName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">The Context</label>
+              <textarea
+                autoCapitalize="off"
+                className="w-full p-2 min-h-[100px] max-h-[150px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y"
+                placeholder="Describe the context..."
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">The Context</label>
-            <textarea
-              autoCapitalize="off"
-              className="w-full p-2 min-h-[100px] max-h-[400px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-y"
-              placeholder="Describe the context of these implementations..."
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-            />
+        </div>
+
+        {/* Model Selection Section */}
+        <div className="grid gap-6 p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <Settings2 size={18} className="text-zinc-500" />
+            <h3 className="font-semibold">Model Configuration</h3>
+          </div>
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">LLM Provider</label>
+              <select
+                className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                value={selectedProviderId}
+                onChange={handleProviderChange}
+                disabled={availableProviders.length === 0}
+              >
+                {availableProviders.length === 0 ? (
+                  <option>No providers configured</option>
+                ) : (
+                  availableProviders.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              {availableProviders.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Configure API keys in config/api.ts to enable more providers.
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Model</label>
+              <select
+                className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                value={selectedModelId}
+                onChange={(e) => setSelectedModelId(e.target.value)}
+                disabled={!currentProvider}
+              >
+                {currentProvider?.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -213,7 +308,7 @@ export default function Home() {
       <div className="flex justify-center pt-8">
         <button
           onClick={generateReport}
-          disabled={isLoading || !thingName || snippets.some(s => !s.content)}
+          disabled={isLoading || !thingName || snippets.some(s => !s.content) || !selectedProviderId}
           className="flex items-center gap-3 px-8 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-full font-semibold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
         >
           {isLoading ? (
@@ -291,4 +386,3 @@ export default function Home() {
     </main>
   );
 }
-

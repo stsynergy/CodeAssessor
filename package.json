@@ -9,11 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
     "clsx": "^2.1.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.468.0",
+    "multi-llm-ts": "^4.6.2",
     "next": "15.1.0",
     "prismjs": "^1.29.0",
     "react": "^19.0.0",

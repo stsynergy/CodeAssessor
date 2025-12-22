@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GOOGLE_GENERATIVE_AI_API_KEY } from "@/config/api";
+import { igniteEngine, Message } from "multi-llm-ts";
+import { PROVIDERS } from "@/config/models";
 
 export async function POST(req: NextRequest) {
   try {
-    const { thingName, context, snippets } = await req.json();
+    const { thingName, context, snippets, providerId, modelId } = await req.json();
 
     if (!thingName || !snippets || !Array.isArray(snippets) || snippets.length < 2) {
       return NextResponse.json(
@@ -13,24 +13,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!apiKey || apiKey === "YOUR_API_KEY_HERE") {
+    if (!providerId || !modelId) {
       return NextResponse.json(
-        { error: "Google Gemini API key is not configured in config/api.ts." },
+        { error: "Provider and Model must be selected." },
+        { status: 400 }
+      );
+    }
+
+    const provider = PROVIDERS.find((p) => p.id === providerId);
+    if (!provider || !provider.apiKey || provider.apiKey === "YOUR_API_KEY_HERE") {
+      return NextResponse.json(
+        { error: `API key for ${providerId} is not configured.` },
         { status: 500 }
       );
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    console.log(`--- INITIALIZING ENGINE: ${providerId} ---`);
+    const engine = igniteEngine(providerId, { 
+      apiKey: provider.apiKey,
+      timeout: 120000 // Increase timeout to 120 seconds for large architectural reports
+    });
+    const chatModel = engine.buildModel(modelId);
 
     let codeBlockSection = "";
-    snippets.forEach((s) => {
+    snippets.forEach((s: any) => {
       codeBlockSection += `\n${s.name}:\n\`\`\`${s.language || "javascript"}\n${s.content}\n\`\`\`\n`;
     });
 
     const prompt = `
-Conduct a rigorous, professional assessment of theese ${thingName} implementations. Provide a high-density report that distinguishes between "code that works" and "code that scales."
+Conduct a rigorous, professional assessment of these ${thingName} implementations. Provide a high-density report that distinguishes between "code that works" and "code that scales."
 1. Assessment Pillars
 
 Evaluate all provided snippets against these universal dimensions:
@@ -69,13 +80,51 @@ Implementations:
 ${codeBlockSection}
 `;
 
-    console.log("--- PROMPT SENT TO MODEL ---");
+    console.log(`--- PROMPT SENT TO ${providerId} (${modelId}) ---`);
     console.log(prompt);
     console.log("--- END OF PROMPT ---");
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let text = response.text();
+    let text = "";
+    let reasoning = "";
+    try {
+      console.log(`--- CALLING ENGINE.GENERATE() FOR ${providerId} (Internal Streaming) ---`);
+      const messages = [new Message("user", prompt)];
+      
+      const stream = engine.generate(chatModel, messages, {
+        maxTokens: 6000,
+        temperature: 1.0
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content') {
+          text += chunk.text || "";
+        } else if (chunk.type === 'reasoning') {
+          reasoning += chunk.text || "";
+        }
+      }
+      
+      if (reasoning) {
+        console.log(`--- REASONING CAPTURED (${reasoning.length} chars) ---`);
+      }
+
+      if (!text) {
+        throw new Error("LLM returned no content via stream");
+      }
+    } catch (chatError: any) {
+      console.error(`--- ERROR DURING ENGINE.GENERATE() FOR ${providerId} ---`);
+      console.error("Error Name:", chatError.name);
+      console.error("Error Message:", chatError.message);
+      if (chatError.stack) console.error("Stack Trace:", chatError.stack);
+      
+      // Check for Anthropic-specific errors
+      const errorMsg = chatError.message || "";
+      let userError = `LLM Chat Error (${providerId}/${modelId}): ${errorMsg}`;
+      
+      return NextResponse.json(
+        { error: userError },
+        { status: 500 }
+      );
+    }
 
     console.log("\n--- FULL ANSWER FROM MODEL ---");
     console.log(text);
@@ -104,8 +153,18 @@ ${tableMarkdown}
 `;
 
       try {
-        const scoreResult = await model.generateContent(scoringPrompt);
-        summaryScores = scoreResult.response.text();
+        const scoreMessages = [new Message("user", scoringPrompt)];
+        const scoreStream = engine.generate(chatModel, scoreMessages, {
+          maxTokens: 2000,
+          temperature: 1.0
+        });
+
+        summaryScores = "";
+        for await (const chunk of scoreStream) {
+          if (chunk.type === 'content') {
+            summaryScores += chunk.text || "";
+          }
+        }
         
         console.log("--- SUMMARY SCORES GENERATED ---");
         console.log(summaryScores);
@@ -125,17 +184,16 @@ ${tableMarkdown}
     // Add Header and Appendix
     const header = `# Architectural Assessment Report for: ${thingName}\n\r\n**Code context:** ${context || "Not provided"} \r\n\r\n`;
     
-    const appendix = `\n\n---\n\n### Appendix: Assessment Methodology\n\nThis report was generated by an AI architectural assessment engine using the following prompt configuration:\n\n\`\`\`text\n${prompt.trim()}\n\`\`\``;
+    const appendix = `\n\n---\n\n### Appendix: Assessment Methodology\n\nThis report was generated by an AI architectural assessment engine using the following configuration:\n\n- **Provider:** ${providerId}\n- **Model:** ${modelId}\n\n#### Prompt Configuration:\n\n\`\`\`text\n${prompt.trim()}\n\`\`\``;
 
     text = header + text + appendix;
 
     return NextResponse.json({ report: text });
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("LLM Error:", error);
     return NextResponse.json(
       { error: "An error occurred while generating the report. " + (error.message || "") },
       { status: 500 }
     );
   }
 }
-
