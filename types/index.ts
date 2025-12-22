@@ -1,17 +1,23 @@
 export type Language = "javascript" | "typescript" | "python" | "java" | "c" | "cpp" | "csharp" | "php" | "rust";
 
+export interface Candidate {
+  _id?: string;
+  name: string;
+  description?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export interface Snippet {
-  id: string;
-  name: string; // This is the Candidate Name
+  candidateId: string;
   content: string;
-  language?: Language;
 }
 
 export interface AssessmentResult {
   providerId: string;
   modelId: string;
   reportMarkdown: string;
-  scores: Record<string, string>; // Candidate Name -> Raw Score String (e.g. "4/15")
+  scores: Record<string, string>; // Candidate ID -> Raw Score String (e.g. "4/15")
   timestamp: Date;
 }
 
@@ -21,7 +27,7 @@ export interface Subject {
   thingName: string;
   context: string;
   language: Language;
-  snippets: Snippet[]; // Candidates
+  snippets: Snippet[]; // Linked to candidates via candidateId
   trialsNeeded: number;
   providerId?: string;
   modelId?: string;
@@ -42,6 +48,7 @@ export interface Trial {
 export interface Batch {
   _id?: string;
   name: string;
+  candidateIds: string[]; // Global candidates active for this batch
   description?: string;
   createdAt: Date;
   updatedAt?: Date;

@@ -5,6 +5,7 @@ import { Sidebar, ViewType } from "@/components/Sidebar";
 import { SingleRun } from "@/components/SingleRun";
 import { BatchRunner } from "@/components/BatchRunner";
 import { StatsDashboard } from "@/components/StatsDashboard";
+import { CandidateRegistry } from "@/components/CandidateRegistry";
 import { Subject } from "@/types";
 
 export default function Home() {
@@ -41,6 +42,8 @@ export default function Home() {
         return <BatchRunner />;
       case "stats":
         return <StatsDashboard />;
+      case "candidates":
+        return <CandidateRegistry />;
       default:
         return <BatchRunner />;
     }

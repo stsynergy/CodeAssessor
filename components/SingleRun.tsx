@@ -16,11 +16,11 @@ import "prismjs/components/prism-csharp";
 import "prismjs/components/prism-php";
 import "prismjs/components/prism-rust";
 import "prismjs/themes/prism-tomorrow.css";
-import { Plus, Trash2, FileText, Loader2, Download, Settings2, Save } from "lucide-react";
+import { Plus, Trash2, FileText, Loader2, Download, Settings2, Save, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useReactToPrint } from "react-to-print";
-import { Snippet, Language, Subject, Trial } from "@/types";
+import { Snippet, Language, Subject, Trial, Candidate } from "@/types";
 
 interface Provider {
   id: string;
@@ -35,10 +35,8 @@ interface SingleRunProps {
 export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
   const [thingName, setThingName] = useState("");
   const [context, setContext] = useState("");
-  const [snippets, setSnippets] = useState<Snippet[]>([
-    { id: "1", name: "Implementation 1", content: "" },
-    { id: "2", name: "Implementation 2", content: "" },
-  ]);
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<Language>("javascript");
   const [report, setReport] = useState("");
   const [scores, setScores] = useState<Record<string, string>>({});
@@ -58,7 +56,26 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
 
   useEffect(() => {
     fetchProviders();
+    fetchCandidates();
   }, []);
+
+  const fetchCandidates = async () => {
+    try {
+      const response = await fetch("/api/candidates");
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setAllCandidates(data);
+        if (data.length >= 2) {
+          setSnippets([
+            { candidateId: data[0]._id!, content: "" },
+            { candidateId: data[1]._id!, content: "" },
+          ]);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch candidates:", error);
+    }
+  };
 
   const fetchProviders = async () => {
     try {
@@ -84,24 +101,24 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
   };
 
   const addSnippet = () => {
+    if (allCandidates.length === 0) return;
     setSnippets([
       ...snippets,
       {
-        id: Math.random().toString(36).substr(2, 9),
-        name: `Implementation ${snippets.length + 1}`,
+        candidateId: allCandidates[0]._id!,
         content: "",
       },
     ]);
   };
 
-  const removeSnippet = (id: string) => {
+  const removeSnippet = (candidateId: string) => {
     if (snippets.length <= 2) return;
-    setSnippets(snippets.filter((s) => s.id !== id));
+    setSnippets(snippets.filter((s) => s.candidateId !== candidateId));
   };
 
-  const updateSnippet = (id: string, updates: Partial<Snippet>) => {
+  const updateSnippet = (candidateId: string, updates: Partial<Snippet>) => {
     setSnippets(
-      snippets.map((s) => (s.id === id ? { ...s, ...updates } : s))
+      snippets.map((s) => (s.candidateId === candidateId ? { ...s, ...updates } : s))
     );
   };
 
@@ -307,51 +324,63 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
         </div>
 
         <div className="grid gap-6">
-          {snippets.map((snippet) => (
-            <div
-              key={snippet.id}
-              className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 relative"
-            >
-              {snippets.length > 2 && (
-                <button
-                  onClick={() => removeSnippet(snippet.id)}
-                  className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 transition-colors z-10"
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
-              
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  autoCapitalize="off"
-                  className="w-full p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                  placeholder="Implementation Name (e.g. Standard, Optimized...)"
-                  value={snippet.name}
-                  onChange={(e) => updateSnippet(snippet.id, { name: e.target.value })}
-                />
+          {snippets.map((snippet, idx) => {
+            const candidate = allCandidates.find(c => c._id === snippet.candidateId);
+            return (
+              <div
+                key={idx}
+                className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 relative"
+              >
+                {snippets.length > 2 && (
+                  <button
+                    onClick={() => removeSnippet(snippet.candidateId)}
+                    className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 transition-colors z-10"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <User size={18} className="text-zinc-500" />
+                    <select
+                      className="flex-1 p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-sm"
+                      value={snippet.candidateId}
+                      onChange={(e) => updateSnippet(snippet.candidateId, { candidateId: e.target.value })}
+                    >
+                      {allCandidates.map(c => (
+                        <option key={c._id} value={c._id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden font-mono text-sm bg-zinc-50 dark:bg-zinc-950">
-                  <Editor
-                    value={snippet.content}
-                    onValueChange={(content) => updateSnippet(snippet.id, { content })}
-                    highlight={(code) => {
-                      const grammar = languages[selectedLanguage] || languages.javascript;
-                      return highlight(code, grammar, selectedLanguage);
-                    }}
-                    padding={16}
-                    className="min-h-[200px]"
-                    textareaClassName="outline-none"
-                    placeholder="Paste or write your code implementation here..."
-                    style={{
-                      fontFamily: '"Fira code", "Fira Mono", monospace',
-                      fontSize: 14,
-                    }}
-                  />
+                  <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden font-mono text-sm bg-zinc-50 dark:bg-zinc-950">
+                    <Editor
+                      value={snippet.content}
+                      onValueChange={(content) => updateSnippet(snippet.candidateId, { content })}
+                      highlight={(code) => {
+                        const grammar = languages[selectedLanguage] || languages.javascript;
+                        return highlight(code, grammar, selectedLanguage);
+                      }}
+                      padding={16}
+                      className="min-h-[200px]"
+                      textareaClassName="outline-none"
+                      placeholder="Paste or write your code implementation here..."
+                      style={{
+                        fontFamily: '"Fira code", "Fira Mono", monospace',
+                        fontSize: 14,
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
+            );
+          })}
+          {allCandidates.length === 0 && (
+            <div className="p-10 text-center border-2 border-dashed rounded-xl text-zinc-400">
+              <p>No candidates found in registry. Please add candidates first.</p>
             </div>
-          ))}
+          )}
         </div>
       </div>
 

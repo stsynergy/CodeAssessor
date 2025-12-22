@@ -17,10 +17,12 @@ import {
   X,
   HelpCircle,
   Code,
-  FileText,
-  Layers
+  FileText, 
+  Layers,
+  Users,
+  User
 } from 'lucide-react';
-import { Batch, Subject, Trial, Language, Snippet } from '@/types';
+import { Batch, Subject, Trial, Language, Snippet, Candidate } from '@/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Editor from "react-simple-code-editor";
@@ -52,6 +54,7 @@ export const BatchRunner: React.FC = () => {
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [trials, setTrials] = useState<Trial[]>([]);
   const [activeTrial, setActiveTrial] = useState<Trial | null>(null);
+  const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -63,21 +66,29 @@ export const BatchRunner: React.FC = () => {
   const [newContext, setNewContext] = useState("");
   const [newLanguage, setNewLanguage] = useState<Language>("javascript");
   const [newTrialsNeeded, setNewTrialsNeeded] = useState(3);
-  const [newCandidates, setNewCandidates] = useState<Snippet[]>([
-    { id: "1", name: "Candidate 1", content: "" },
-    { id: "2", name: "Candidate 2", content: "" },
-  ]);
 
   const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
 
   const [showHelp, setShowHelp] = useState(false);
+  const [isManagingCandidates, setIsManagingCandidates] = useState(false);
 
   useEffect(() => {
     fetchBatches();
     fetchProviders();
+    fetchCandidates();
   }, []);
+
+  const fetchCandidates = async () => {
+    try {
+      const response = await fetch("/api/candidates");
+      const data = await response.json();
+      if (Array.isArray(data)) setAllCandidates(data);
+    } catch (error) {
+      console.error("Failed to fetch candidates:", error);
+    }
+  };
 
   useEffect(() => {
     if (selectedBatch) {
@@ -183,7 +194,7 @@ export const BatchRunner: React.FC = () => {
       const response = await fetch("/api/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, createdAt: new Date() }),
+        body: JSON.stringify({ name, candidateIds: [], createdAt: new Date() }),
       });
       const data = await response.json();
       setBatches([data, ...batches]);
@@ -211,6 +222,32 @@ export const BatchRunner: React.FC = () => {
     }
   };
 
+  const toggleCandidateInBatch = async (candidateId: string) => {
+    if (!selectedBatch) return;
+    
+    const isSubscribed = (selectedBatch.candidateIds || []).includes(candidateId);
+    let newIds: string[];
+    
+    if (isSubscribed) {
+      newIds = selectedBatch.candidateIds.filter(id => id !== candidateId);
+    } else {
+      newIds = [...(selectedBatch.candidateIds || []), candidateId];
+    }
+
+    try {
+      const response = await fetch("/api/batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...selectedBatch, candidateIds: newIds }),
+      });
+      const updated = await response.json();
+      setSelectedBatch(updated);
+      setBatches(batches.map(b => b._id === updated._id ? updated : b));
+    } catch (error) {
+      console.error("Failed to update batch candidates:", error);
+    }
+  };
+
   const deleteSubject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Are you sure? This will delete all trials for this task.")) return;
@@ -231,13 +268,19 @@ export const BatchRunner: React.FC = () => {
   const addManualSubject = async () => {
     if (!selectedBatch || !newThingName) return;
 
+    // Create snippets for all batch candidates
+    const snippets: Snippet[] = (selectedBatch.candidateIds || []).map(cid => ({
+      candidateId: cid,
+      content: ""
+    }));
+
     const subject: Partial<Subject> = {
       batchId: selectedBatch._id!,
       thingName: newThingName,
       context: newContext,
       language: newLanguage,
       trialsNeeded: newTrialsNeeded,
-      snippets: newCandidates,
+      snippets: snippets,
       providerId: selectedProviderId,
       modelId: selectedModelId,
       createdAt: new Date()
@@ -258,10 +301,6 @@ export const BatchRunner: React.FC = () => {
       setNewThingName("");
       setNewContext("");
       setNewTrialsNeeded(3);
-      setNewCandidates([
-        { id: "1", name: "Candidate 1", content: "" },
-        { id: "2", name: "Candidate 2", content: "" },
-      ]);
       
       // Create initial trials
       for (let i = 0; i < newTrialsNeeded; i++) {
@@ -271,20 +310,6 @@ export const BatchRunner: React.FC = () => {
     } catch (error) {
       console.error("Failed to add subject:", error);
     }
-  };
-
-  const addCandidateToNewTask = () => {
-    const nextId = (newCandidates.length + 1).toString();
-    setNewCandidates([...newCandidates, { id: nextId, name: `Candidate ${nextId}`, content: "" }]);
-  };
-
-  const removeCandidateFromNewTask = (id: string) => {
-    if (newCandidates.length <= 2) return; // Keep at least 2
-    setNewCandidates(newCandidates.filter(c => c.id !== id));
-  };
-
-  const updateCandidateInNewTask = (id: string, field: keyof Snippet, value: string) => {
-    setNewCandidates(newCandidates.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
   const createTrial = async (subjectId: string) => {
@@ -398,18 +423,38 @@ export const BatchRunner: React.FC = () => {
       try {
         const json = JSON.parse(event.target?.result as string);
         const items = Array.isArray(json) ? json : [json];
+        
         for (const item of items) {
+          // Map incoming snippets to global candidates by name
+          const mappedSnippets: Snippet[] = [];
+          if (Array.isArray(item.snippets)) {
+            for (const s of item.snippets) {
+              const globalCand = allCandidates.find(c => c.name.toLowerCase() === s.name.toLowerCase());
+              if (globalCand) {
+                mappedSnippets.push({
+                  candidateId: globalCand._id!,
+                  content: s.content
+                });
+                // Ensure candidate is in the batch lineup
+                if (!selectedBatch.candidateIds.includes(globalCand._id!)) {
+                  await toggleCandidateInBatch(globalCand._id!);
+                }
+              }
+            }
+          }
+
           const subject: Partial<Subject> = {
             batchId: selectedBatch._id!,
             thingName: item.thingName || "Untitled",
             context: item.context || "",
             language: item.language || "javascript",
             trialsNeeded: item.trialsNeeded || 3,
-            snippets: item.snippets || [],
+            snippets: mappedSnippets,
             providerId: item.providerId || selectedProviderId,
             modelId: item.modelId || selectedModelId,
             createdAt: new Date()
           };
+          
           const response = await fetch("/api/subjects", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -423,38 +468,27 @@ export const BatchRunner: React.FC = () => {
         fetchSubjects(selectedBatch._id!);
       } catch (error) {
         console.error("Failed to import subjects:", error);
-        alert("Invalid JSON.");
+        alert("Invalid JSON or import error.");
       }
     };
     reader.readAsText(file);
   };
 
-  const addCandidateToExistingSubject = () => {
+  const updateSubjectSnippet = (candidateId: string, content: string) => {
     if (!selectedSubject) return;
-    const nextId = (selectedSubject.snippets.length + 1).toString();
-    const updated = {
-      ...selectedSubject,
-      snippets: [...selectedSubject.snippets, { id: nextId, name: `Candidate ${nextId}`, content: "" }]
-    };
-    setSelectedSubject(updated);
-  };
+    const updatedSnippets = [...selectedSubject.snippets];
+    const index = updatedSnippets.findIndex(s => s.candidateId === candidateId);
+    
+    if (index !== -1) {
+      updatedSnippets[index] = { ...updatedSnippets[index], content };
+    } else {
+      updatedSnippets.push({ candidateId, content });
+    }
 
-  const removeCandidateFromExistingSubject = (id: string) => {
-    if (!selectedSubject || selectedSubject.snippets.length <= 2) return;
-    const updated = {
+    setSelectedSubject({
       ...selectedSubject,
-      snippets: selectedSubject.snippets.filter(s => s.id !== id)
-    };
-    setSelectedSubject(updated);
-  };
-
-  const updateSubjectSnippet = (snippetId: string, field: keyof Snippet, value: string) => {
-    if (!selectedSubject) return;
-    const updated = {
-      ...selectedSubject,
-      snippets: selectedSubject.snippets.map(s => s.id === snippetId ? { ...s, [field]: value } : s)
-    };
-    setSelectedSubject(updated);
+      snippets: updatedSnippets
+    });
   };
 
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -512,6 +546,9 @@ export const BatchRunner: React.FC = () => {
           <h1 className="text-2xl font-bold tracking-tight">{selectedBatch.name}</h1>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => setIsManagingCandidates(!isManagingCandidates)} className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors text-sm font-medium ${isManagingCandidates ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}>
+            <Users size={16} /> {isManagingCandidates ? 'Close Lineup' : 'Manage Lineup'}
+          </button>
           <button onClick={() => setIsAddingSubject(!isAddingSubject)} className="flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-md transition-colors text-sm font-medium"><Plus size={16} /> Add Task</button>
           <label className="flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-md transition-colors text-sm font-medium cursor-pointer">
             <Upload size={16} /> Import JSON
@@ -519,6 +556,42 @@ export const BatchRunner: React.FC = () => {
           </label>
         </div>
       </div>
+
+      {isManagingCandidates && (
+        <div className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-lg space-y-4 animate-in fade-in slide-in-from-top-4 duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold">Project Lineup</h3>
+              <p className="text-xs text-zinc-500">Select candidates from the global registry to include in this project.</p>
+            </div>
+            <button onClick={() => setIsManagingCandidates(false)}><X size={18} /></button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[300px] overflow-y-auto p-1">
+            {allCandidates.map(candidate => {
+              const isActive = (selectedBatch.candidateIds || []).includes(candidate._id!);
+              return (
+                <button 
+                  key={candidate._id} 
+                  onClick={() => toggleCandidateInBatch(candidate._id!)}
+                  className={`flex flex-col items-center p-3 rounded-lg border-2 transition-all ${isActive ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10' : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 opacity-60'}`}
+                >
+                  <div className={`p-2 rounded-full mb-2 ${isActive ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
+                    <User size={20} />
+                  </div>
+                  <span className={`text-[10px] font-bold text-center line-clamp-1 ${isActive ? 'text-blue-700 dark:text-blue-400' : 'text-zinc-500'}`}>
+                    {candidate.name}
+                  </span>
+                </button>
+              );
+            })}
+            {allCandidates.length === 0 && (
+              <div className="col-span-full py-10 text-center text-zinc-400 border-2 border-dashed rounded-lg">
+                <p className="text-xs italic">No global candidates found. Go to Candidate Registry to add some.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {isAddingSubject && (
         <div className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-lg space-y-4">
@@ -528,42 +601,20 @@ export const BatchRunner: React.FC = () => {
             <textarea placeholder="Requirements/Context" className="w-full p-2 min-h-[80px] bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md text-sm" value={newContext} onChange={(e) => setNewContext(e.target.value)} />
             
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase text-zinc-400">Candidates & Snippets</label>
-                <button onClick={addCandidateToNewTask} className="text-[10px] bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 px-2 py-1 rounded flex items-center gap-1">
-                  <Plus size={12} /> Add Candidate
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {newCandidates.map((c) => (
-                  <div key={c.id} className="space-y-2 p-3 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50/30 dark:bg-zinc-950/30">
-                    <div className="flex items-center gap-2">
-                      <input 
-                        placeholder="Candidate Name" 
-                        className="flex-1 p-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded text-xs font-bold" 
-                        value={c.name} 
-                        onChange={(e) => updateCandidateInNewTask(c.id, "name", e.target.value)} 
-                      />
-                      <button 
-                        onClick={() => removeCandidateFromNewTask(c.id)} 
-                        disabled={newCandidates.length <= 2}
-                        className="p-1.5 text-zinc-400 hover:text-red-500 disabled:opacity-20"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <div className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden bg-white dark:bg-zinc-900 h-[200px] overflow-y-auto">
-                      <Editor 
-                        value={c.content} 
-                        onValueChange={(code) => updateCandidateInNewTask(c.id, "content", code)} 
-                        highlight={(code) => highlight(code, languages[newLanguage] || languages.javascript, newLanguage)} 
-                        padding={8} 
-                        className="font-mono text-[10px] min-h-full" 
-                        style={{ fontFamily: '"Fira code", "Fira Mono", monospace' }} 
-                      />
-                    </div>
-                  </div>
-                ))}
+              <label className="text-xs font-bold uppercase text-zinc-400">Lineup</label>
+              <div className="flex flex-wrap gap-2">
+                {selectedBatch.candidateIds.length > 0 ? (
+                  selectedBatch.candidateIds.map(cid => {
+                    const cand = allCandidates.find(c => c._id === cid);
+                    return (
+                      <div key={cid} className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full text-[10px] font-bold">
+                        {cand?.name || "Unknown Candidate"}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-[10px] text-zinc-400 italic">No candidates selected for this project. Manage lineup first.</p>
+                )}
               </div>
             </div>
 
@@ -572,7 +623,13 @@ export const BatchRunner: React.FC = () => {
                 <label className="text-xs">Trials Needed:</label>
                 <input type="number" className="w-20 p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md text-sm" value={newTrialsNeeded} onChange={(e) => setNewTrialsNeeded(parseInt(e.target.value))} />
               </div>
-              <button onClick={addManualSubject} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-medium text-sm">Create Task</button>
+              <button 
+                onClick={addManualSubject} 
+                disabled={!selectedBatch.candidateIds || selectedBatch.candidateIds.length === 0}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-medium text-sm disabled:opacity-50"
+              >
+                Create Task
+              </button>
             </div>
           </div>
         </div>
@@ -689,39 +746,34 @@ export const BatchRunner: React.FC = () => {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Candidates</h4>
-                      <button onClick={addCandidateToExistingSubject} className="text-[9px] font-bold text-blue-600 hover:underline flex items-center gap-1">
-                        <Plus size={10} /> Add Candidate
-                      </button>
                     </div>
                     <div className="grid gap-4">
-                      {selectedSubject.snippets.map(s => (
-                        <div key={s.id} className="space-y-1">
-                          <div className="flex items-center justify-between group/cand">
-                            <input 
-                              className="text-[9px] font-bold text-zinc-400 bg-transparent border-none p-0 focus:ring-0 flex-1" 
-                              value={s.name} 
-                              onChange={(e) => updateSubjectSnippet(s.id, "name", e.target.value)}
-                            />
-                            <button 
-                              onClick={() => removeCandidateFromExistingSubject(s.id)}
-                              className="text-zinc-400 hover:text-red-500 opacity-0 group-hover/cand:opacity-100 transition-opacity"
-                              disabled={selectedSubject.snippets.length <= 2}
-                            >
-                              <Trash2 size={10} />
-                            </button>
+                      {(selectedBatch.candidateIds || []).map(cid => {
+                        const candidate = allCandidates.find(c => c._id === cid);
+                        const snippet = selectedSubject.snippets.find(s => s.candidateId === cid);
+                        return (
+                          <div key={cid} className="space-y-1">
+                            <div className="flex items-center justify-between group/cand">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase">
+                                {candidate?.name || "Unknown Candidate"}
+                              </span>
+                            </div>
+                            <div className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden h-[150px] overflow-y-auto bg-white dark:bg-zinc-900">
+                              <Editor 
+                                value={snippet?.content || ""} 
+                                onValueChange={(code) => updateSubjectSnippet(cid, code)} 
+                                highlight={(code) => highlight(code, languages[selectedSubject.language] || languages.javascript, selectedSubject.language)} 
+                                padding={8} 
+                                className="font-mono text-[10px] min-h-full" 
+                                style={{ fontFamily: '"Fira code", "Fira Mono", monospace' }} 
+                              />
+                            </div>
                           </div>
-                          <div className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden h-[150px] overflow-y-auto bg-white dark:bg-zinc-900">
-                            <Editor 
-                              value={s.content} 
-                              onValueChange={(code) => updateSubjectSnippet(s.id, "content", code)} 
-                              highlight={(code) => highlight(code, languages[selectedSubject.language] || languages.javascript, selectedSubject.language)} 
-                              padding={8} 
-                              className="font-mono text-[10px] min-h-full" 
-                              style={{ fontFamily: '"Fira code", "Fira Mono", monospace' }} 
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
+                      {selectedBatch.candidateIds.length === 0 && (
+                        <p className="text-xs text-zinc-400 italic">No candidates selected for this project.</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -745,15 +797,19 @@ export const BatchRunner: React.FC = () => {
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {activeTrial.result.scores && Object.entries(activeTrial.result.scores).length > 0 ? (
-                              Object.entries(activeTrial.result.scores).map(([name, score]) => (
-                                <div key={name} className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-center shadow-sm">
-                                  <p className="text-[10px] font-black uppercase text-zinc-400 mb-2 truncate" title={name}>{name}</p>
-                                  <p className="text-3xl font-black text-blue-600">
-                                    {score}
-                                    {!score.includes('/') && <span className="text-sm font-normal opacity-40 ml-1">/10</span>}
-                                  </p>
-                                </div>
-                              ))
+                              Object.entries(activeTrial.result.scores).map(([cid, score]) => {
+                                const candidate = allCandidates.find(c => c._id === cid);
+                                const displayName = candidate?.name || cid;
+                                return (
+                                  <div key={cid} className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-center shadow-sm">
+                                    <p className="text-[10px] font-black uppercase text-zinc-400 mb-2 truncate" title={displayName}>{displayName}</p>
+                                    <p className="text-3xl font-black text-blue-600">
+                                      {score}
+                                      {!score.includes('/') && <span className="text-sm font-normal opacity-40 ml-1">/10</span>}
+                                    </p>
+                                  </div>
+                                );
+                              })
                             ) : (
                               <div className="col-span-full py-4 text-center text-xs text-zinc-400 italic bg-white dark:bg-zinc-900 rounded-lg border border-dashed border-zinc-200 dark:border-zinc-800">
                                 Waiting for numerical assessment...

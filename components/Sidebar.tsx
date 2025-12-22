@@ -7,7 +7,8 @@ import {
   PlusCircle, 
   Settings,
   ChevronRight,
-  Code
+  Code,
+  Users
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -16,7 +17,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export type ViewType = 'single' | 'batch' | 'stats' | 'history';
+export type ViewType = 'single' | 'batch' | 'stats' | 'history' | 'candidates';
 
 interface SidebarProps {
   currentView: ViewType;
@@ -33,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'single', label: 'Single Run', icon: Play },
     { id: 'batch', label: 'Batch Runner', icon: Layers },
     { id: 'stats', label: 'Statistics', icon: BarChart2 },
+    { id: 'candidates', label: 'Candidates', icon: Users },
   ];
 
   return (

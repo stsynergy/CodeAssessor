@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { igniteEngine, Message } from "multi-llm-ts";
 import { PROVIDERS } from "@/config/models";
+import { getDb } from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,12 +49,32 @@ export async function POST(req: NextRequest) {
     if (provider.apiKey) engineConfig.apiKey = provider.apiKey;
     if (provider.baseURL) engineConfig.baseURL = provider.baseURL;
 
+    const db = await getDb();
+    
+    // Resolve candidate names for the prompt
+    const candidateMap: Record<string, string> = {}; // ID -> Name
+    const nameToIdMap: Record<string, string> = {}; // Name -> ID
+    
+    for (const s of snippets) {
+      if (s.candidateId) {
+        const candidate = await db.collection("candidates").findOne({ _id: new ObjectId(s.candidateId) });
+        const name = candidate ? candidate.name : `Candidate ${s.candidateId}`;
+        candidateMap[s.candidateId] = name;
+        nameToIdMap[name.toLowerCase()] = s.candidateId;
+      } else if (s.name) {
+        // Fallback for adhoc snippets
+        candidateMap[s.id || s.name] = s.name;
+        nameToIdMap[s.name.toLowerCase()] = s.id || s.name;
+      }
+    }
+
     const engine = igniteEngine(providerId, engineConfig);
     const chatModel = engine.buildModel(modelId);
 
     let codeBlockSection = "";
     snippets.forEach((s: any) => {
-      codeBlockSection += `\n${s.name}:\n\`\`\`${s.language || "javascript"}\n${s.content}\n\`\`\`\n`;
+      const name = candidateMap[s.candidateId] || s.name || "Unknown Candidate";
+      codeBlockSection += `\n${name}:\n\`\`\`${s.language || "javascript"}\n${s.content}\n\`\`\`\n`;
     });
 
     const prompt = `
@@ -159,7 +181,8 @@ ${codeBlockSection}
         for (const m of matches) {
           let count = 0;
           snippets.forEach((s: any) => {
-            if (m.toLowerCase().includes(s.name.toLowerCase())) count++;
+            const name = candidateMap[s.candidateId] || s.name;
+            if (name && m.toLowerCase().includes(name.toLowerCase())) count++;
           });
           if (count > maxCandidateMatches) {
             maxCandidateMatches = count;
@@ -247,8 +270,20 @@ DO NOT INCLUDE ANYTHING ELSE.
           if (jsonStr) {
             try {
               const parsedData = JSON.parse(jsonStr);
-              structuredScores = parsedData.data || parsedData;
-              console.log("--- SUMMARY SCORES PARSED SUCCESS ---");
+              const rawScores = parsedData.data || parsedData;
+              
+              // Map names back to IDs
+              Object.entries(rawScores).forEach(([name, score]) => {
+                const id = nameToIdMap[name.toLowerCase()];
+                if (id) {
+                  structuredScores[id] = score as string;
+                } else {
+                  // Keep original if not found (might be an adhoc name)
+                  structuredScores[name] = score as string;
+                }
+              });
+              
+              console.log("--- SUMMARY SCORES PARSED & MAPPED SUCCESS ---");
               console.log(structuredScores);
             } catch (jsonErr) {
               console.error("Failed to parse extracted JSON string:", jsonStr);

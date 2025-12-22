@@ -1,16 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart2, TrendingUp, Cpu, Award, Zap, AlertTriangle, RefreshCw } from 'lucide-react';
-import { Trial } from '@/types';
+import { BarChart2, TrendingUp, Cpu, Award, Zap, AlertTriangle, RefreshCw, User } from 'lucide-react';
+import { Trial, Candidate } from '@/types';
 
 export const StatsDashboard: React.FC = () => {
   const [trials, setTrials] = useState<Trial[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchTrials();
+    Promise.all([fetchTrials(), fetchCandidates()]).finally(() => setIsLoading(false));
   }, []);
 
+  const fetchCandidates = async () => {
+    try {
+      const response = await fetch("/api/candidates");
+      const data = await response.json();
+      if (Array.isArray(data)) setCandidates(data);
+    } catch (error) {
+      console.error("Failed to fetch candidates:", error);
+    }
+  };
+
   // Helper to parse scores like "7/15" or "8.5" into a numeric value
+  // ... (keep parseScore)
   const parseScore = (scoreStr: string | number): number => {
     if (typeof scoreStr === 'number') return scoreStr;
     if (!scoreStr) return 0;
@@ -27,7 +39,6 @@ export const StatsDashboard: React.FC = () => {
 
   const fetchTrials = async () => {
     try {
-      // Fetch all trials that are completed
       const response = await fetch("/api/trials");
       const data = await response.json();
       if (Array.isArray(data)) {
@@ -35,12 +46,11 @@ export const StatsDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to fetch trials:", error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   // Aggregations
+  // ... (keep modelStats aggregation)
   const modelStats = trials.reduce((acc: any, curr) => {
     const modelId = curr.result?.modelId || 'unknown';
     if (!acc[modelId]) {
@@ -64,20 +74,22 @@ export const StatsDashboard: React.FC = () => {
   })).sort((a, b) => parseFloat(b.avgScore) - parseFloat(a.avgScore));
 
   const candidateStats = trials.reduce((acc: any, curr) => {
-    Object.entries(curr.result?.scores || {}).forEach(([name, scoreStr]) => {
+    Object.entries(curr.result?.scores || {}).forEach(([cid, scoreStr]) => {
       const score = parseScore(scoreStr);
-      // Normalize name to lowercase for aggregation (e.g. "Candidate A" vs "candidate a")
-      const normalized = name.toLowerCase().trim();
-      if (!acc[normalized]) {
-        acc[normalized] = { totalScore: 0, count: 0, displayName: name };
+      const candidate = candidates.find(c => c._id === cid);
+      const displayName = candidate?.name || cid;
+      
+      if (!acc[cid]) {
+        acc[cid] = { totalScore: 0, count: 0, displayName: displayName };
       }
-      acc[normalized].totalScore += score;
-      acc[normalized].count += 1;
+      acc[cid].totalScore += score;
+      acc[cid].count += 1;
     });
     return acc;
   }, {});
 
-  const topCandidates = Object.entries(candidateStats).map(([_, stats]: [string, any]) => ({
+  const topCandidates = Object.entries(candidateStats).map(([cid, stats]: [string, any]) => ({
+    id: cid,
     name: stats.displayName,
     avgScore: (stats.totalScore / stats.count).toFixed(2),
     count: stats.count
