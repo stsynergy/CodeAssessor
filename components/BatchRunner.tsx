@@ -804,8 +804,8 @@ export const BatchRunner: React.FC = () => {
                                   <div key={cid} className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-center shadow-sm">
                                     <p className="text-[10px] font-black uppercase text-zinc-400 mb-2 truncate" title={displayName}>{displayName}</p>
                                     <p className="text-3xl font-black text-blue-600">
-                                      {score}
-                                      {!score.includes('/') && <span className="text-sm font-normal opacity-40 ml-1">/10</span>}
+                                      {String(score)}
+                                      {typeof score === 'string' && !score.includes('/') && <span className="text-sm font-normal opacity-40 ml-1">/10</span>}
                                     </p>
                                   </div>
                                 );

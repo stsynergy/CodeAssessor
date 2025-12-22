@@ -254,15 +254,19 @@ DO NOT INCLUDE ANYTHING ELSE.
             // Markdown is everything else, removing the JSON block
             summaryScoresMarkdown = scoreText.replace(jsonBlockRegex, "").trim();
           } else {
-            // Fallback: look for the last { ... } pair which is usually the JSON object
-            const lastBraceIndex = scoreText.lastIndexOf("}");
-            const firstBraceIndex = scoreText.lastIndexOf("{", lastBraceIndex);
+            // Find the outermost JSON structure (either { } or [ ])
+            const firstBrace = scoreText.indexOf('{');
+            const firstBracket = scoreText.indexOf('[');
+            const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
             
-            if (firstBraceIndex !== -1 && lastBraceIndex !== -1) {
-              jsonStr = scoreText.substring(firstBraceIndex, lastBraceIndex + 1).trim();
-              summaryScoresMarkdown = (scoreText.substring(0, firstBraceIndex) + scoreText.substring(lastBraceIndex + 1)).trim();
+            const lastBrace = scoreText.lastIndexOf('}');
+            const lastBracket = scoreText.lastIndexOf(']');
+            const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
+
+            if (start !== -1 && end !== -1 && end > start) {
+              jsonStr = scoreText.substring(start, end + 1).trim();
+              summaryScoresMarkdown = (scoreText.substring(0, start) + scoreText.substring(end + 1)).trim();
             } else {
-              // No JSON found
               summaryScoresMarkdown = scoreText;
             }
           }
@@ -270,18 +274,28 @@ DO NOT INCLUDE ANYTHING ELSE.
           if (jsonStr) {
             try {
               const parsedData = JSON.parse(jsonStr);
-              const rawScores = parsedData.data || parsedData;
+              // Handle 1-layer nesting: data property or top-level array
+              const data = parsedData.data || parsedData;
               
-              // Map names back to IDs
-              Object.entries(rawScores).forEach(([name, score]) => {
+              const processEntry = (name: string, val: any) => {
                 const id = nameToIdMap[name.toLowerCase()];
                 if (id) {
-                  structuredScores[id] = score as string;
+                  structuredScores[id] = String(val);
                 } else {
                   // Keep original if not found (might be an adhoc name)
-                  structuredScores[name] = score as string;
+                  structuredScores[name] = String(val);
                 }
-              });
+              };
+
+              if (Array.isArray(data)) {
+                data.forEach(item => {
+                  if (typeof item === 'object' && item !== null) {
+                    Object.entries(item).forEach(([n, v]) => processEntry(n, v));
+                  }
+                });
+              } else if (typeof data === 'object' && data !== null) {
+                Object.entries(data).forEach(([n, v]) => processEntry(n, v));
+              }
               
               console.log("--- SUMMARY SCORES PARSED & MAPPED SUCCESS ---");
               console.log(structuredScores);
