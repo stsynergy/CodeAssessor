@@ -88,6 +88,10 @@ export const BatchRunner: React.FC = () => {
   useEffect(() => {
     if (selectedSubject?._id) {
       fetchTrials(selectedSubject._id);
+      
+      // Update model dropdowns from subject data
+      if (selectedSubject.providerId) setSelectedProviderId(selectedSubject.providerId);
+      if (selectedSubject.modelId) setSelectedModelId(selectedSubject.modelId);
     }
   }, [selectedSubject?._id]);
 
@@ -113,7 +117,7 @@ export const BatchRunner: React.FC = () => {
     }, 1000); // 1 second debounce
 
     return () => clearTimeout(timeoutId);
-  }, [selectedSubject?.context, selectedSubject?.snippets, selectedSubject?.thingName, selectedSubject?.language]);
+  }, [selectedSubject?.context, selectedSubject?.snippets, selectedSubject?.thingName, selectedSubject?.language, selectedSubject?.providerId, selectedSubject?.modelId]);
 
   const fetchBatches = async () => {
     try {
@@ -145,9 +149,9 @@ export const BatchRunner: React.FC = () => {
       if (Array.isArray(data)) {
         setTrials(data);
         if (data.length > 0) {
-          // Default to the last non-completed trial or the last one
-          const lastPending = [...data].reverse().find(t => t.status !== 'completed');
-          setActiveTrial(lastPending || data[data.length - 1]);
+          // Default to the first non-completed trial or the first one
+          const firstPending = data.find(t => t.status !== 'completed');
+          setActiveTrial(firstPending || data[0]);
         } else {
           setActiveTrial(null);
         }
@@ -234,6 +238,8 @@ export const BatchRunner: React.FC = () => {
       language: newLanguage,
       trialsNeeded: newTrialsNeeded,
       snippets: newCandidates,
+      providerId: selectedProviderId,
+      modelId: selectedModelId,
       createdAt: new Date()
     };
 
@@ -368,8 +374,17 @@ export const BatchRunner: React.FC = () => {
         body: JSON.stringify(updatedTrial),
       });
       const saved = await response.json();
-      setTrials(prev => prev.map(t => t._id === saved._id ? saved : t));
-      setActiveTrial(saved);
+      
+      const updatedTrials = trials.map(t => t._id === saved._id ? saved : t);
+      setTrials(updatedTrials);
+      
+      // Automatically switch to the next trial that needs attention
+      const nextTrial = updatedTrials.find(t => t.status !== 'completed');
+      if (nextTrial) {
+        setActiveTrial(nextTrial);
+      } else {
+        setActiveTrial(saved);
+      }
     } catch (error) {
       console.error("Failed to finalize trial:", error);
     }
@@ -391,6 +406,8 @@ export const BatchRunner: React.FC = () => {
             language: item.language || "javascript",
             trialsNeeded: item.trialsNeeded || 3,
             snippets: item.snippets || [],
+            providerId: item.providerId || selectedProviderId,
+            modelId: item.modelId || selectedModelId,
             createdAt: new Date()
           };
           const response = await fetch("/api/subjects", {
@@ -445,7 +462,20 @@ export const BatchRunner: React.FC = () => {
     setSelectedProviderId(providerId);
     const provider = availableProviders.find((p) => p.id === providerId);
     if (provider && provider.models.length > 0) {
-      setSelectedModelId(provider.models[0].id);
+      const modelId = provider.models[0].id;
+      setSelectedModelId(modelId);
+      
+      if (selectedSubject) {
+        setSelectedSubject({ ...selectedSubject, providerId, modelId });
+      }
+    }
+  };
+
+  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const modelId = e.target.value;
+    setSelectedModelId(modelId);
+    if (selectedSubject) {
+      setSelectedSubject({ ...selectedSubject, modelId });
     }
   };
 
@@ -600,7 +630,7 @@ export const BatchRunner: React.FC = () => {
                     <select className="p-1 bg-white dark:bg-zinc-900 border rounded text-[10px] outline-none" value={selectedProviderId} onChange={handleProviderChange}>
                       {availableProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
-                    <select className="p-1 bg-white dark:bg-zinc-900 border rounded text-[10px] outline-none" value={selectedModelId} onChange={(e) => setSelectedModelId(e.target.value)}>
+                    <select className="p-1 bg-white dark:bg-zinc-900 border rounded text-[10px] outline-none" value={selectedModelId} onChange={handleModelChange}>
                       {availableProviders.find(p => p.id === selectedProviderId)?.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>
                   </div>
@@ -718,7 +748,10 @@ export const BatchRunner: React.FC = () => {
                               Object.entries(activeTrial.result.scores).map(([name, score]) => (
                                 <div key={name} className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-center shadow-sm">
                                   <p className="text-[10px] font-black uppercase text-zinc-400 mb-2 truncate" title={name}>{name}</p>
-                                  <p className="text-3xl font-black text-blue-600">{score}<span className="text-sm font-normal opacity-40 ml-1">/10</span></p>
+                                  <p className="text-3xl font-black text-blue-600">
+                                    {score}
+                                    {!score.includes('/') && <span className="text-sm font-normal opacity-40 ml-1">/10</span>}
+                                  </p>
                                 </div>
                               ))
                             ) : (

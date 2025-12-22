@@ -79,7 +79,7 @@ Evaluate all provided snippets against these universal dimensions:
 	For the Comparison Matrix:
 			A table comparing implementations side-by-side across key technical features and standards.
 			Rows should include technical features (Prop Spreading, Data Cleaning) and "Soft" features (DX, A11y) + other metrics/assesions, like for example: API Surface, Data Flow, Scalability, Integrity.
-			Include visual indicators (✅/❌ for discrete metrics), (⚠️ exclusively for risks) and/or score (1-5) for quick scanning in fields where possible.
+			Include visual indicators (✅/❌ for discrete metrics), and/or score (1-5) for quick scanning in fields where possible.
 	
     No Hyperbole: Eliminate fluff words like "ultimate," "perfect," or "professional." Use objective, technical language.
 
@@ -141,7 +141,7 @@ ${codeBlockSection}
       );
     }
 
-    console.log("\n--- FULL ANSWER FROM MODEL ---");
+    console.log(`\n--- FULL ANSWER FROM MODEL (length: ${text.length} chars) ---`);
     console.log(text);
     console.log("--- END OF ANSWER ---\n");
 
@@ -149,86 +149,115 @@ ${codeBlockSection}
     let summaryScoresMarkdown = "";
     let structuredScores: Record<string, string> = {};
     const tableRegex = /\|(.+)\|.*\n\|( *:?-+:? *\|)+\n(\|(.+)\|.*\n?)+/g;
-    const match = text.match(tableRegex);
+    const matches = text.match(tableRegex);
 
-    if (match && match.length > 0) {
-      const tableMarkdown = match[0];
+    if (matches && matches.length > 0) {
+      // Find the best table (usually the one with most candidates or just the largest one)
+      let tableMarkdown = matches[0];
+      if (matches.length > 1) {
+        let maxCandidateMatches = -1;
+        for (const m of matches) {
+          let count = 0;
+          snippets.forEach((s: any) => {
+            if (m.toLowerCase().includes(s.name.toLowerCase())) count++;
+          });
+          if (count > maxCandidateMatches) {
+            maxCandidateMatches = count;
+            tableMarkdown = m;
+          }
+        }
+      }
+
+      console.log(`--- EXTRACTED TABLE FOR SCORING (length: ${tableMarkdown.length}) ---`);
       const scoringPrompt = `
-Based on the following comparison matrix table, calculate a summary score for each implementation (column). 
+Based on the following comparison matrix table, calculate a summary score for each implementation. 
 
-Identify all metrics (rows) that imply a positive/negative value (e.g., ✅=1/❌=0/⚠️=-1, High=2/Medium=1/Low=0, or numerical scores). 
+${tableMarkdown}
+
+Identify all metrics that imply a positive/negative value (e.g., ✅=1/❌=0/⚠️=-1, High=2/Medium=1/Low=0, or numerical scores).
 Determine the total maximum points possible and the actual points achieved by each implementation. 
 
-OUTPUT REQUIREMENTS:
-Present the result as a table with only the header (names) and score row in '### Summary Scores' section. 
-Include a brief explanation of the scoring logic used.
-Return ONLY the markdown for this 'Summary Scores' section.
-Return ALSO a JSON object at the end - put it inside \`\`\`json \`\`\` code block.
+**FORMAT (strictly):**
+1. Markdown horizontal table: header row + scores row (score/total)
+2. "Scoring Logic" (short description how scores were counted.)
+3. JSON code block with format: {"name": "score/total"}
 
-JSON STRUCTURE:
-{
-  "Exact Name 1": "7/15",
-  "Exact Name 2": "3/15"
-}
-
-
-TABLE TO ANALYZE:
-${tableMarkdown}
+DO NOT INCLUDE ANYTHING ELSE.
 `;
+
+      console.log(`--- SCORING PROMPT SENT TO ${providerId} (${modelId}) ---`);
+      console.log(scoringPrompt);
+      console.log("--- END OF SCORING PROMPT ---");
 
       try {
         const scoreMessages = [new Message("user", scoringPrompt)];
         const scoreStream = engine.generate(chatModel, scoreMessages, {
           maxTokens: 6000,
-          temperature: 0.0 // Strict extraction
+          temperature: 1.0 // Strict extraction
         });
 
         let scoreText = "";
+        let scoreReasoning = "";
         for await (const chunk of scoreStream) {
           if (chunk.type === 'content') {
             scoreText += chunk.text || "";
+          } else if (chunk.type === 'reasoning') {
+            scoreReasoning += chunk.text || "";
           }
         }
         
-        console.log("--- RAW SCORE RESPONSE ---");
+        if (scoreReasoning) {
+          console.log(`--- SCORING REASONING CAPTURED (${scoreReasoning.length} chars) ---`);
+          // If the model put everything in reasoning (some models do this for extraction), 
+          // we use it as the fallback text
+          if (!scoreText) {
+            scoreText = scoreReasoning;
+          }
+        }
+        
+        console.log(`--- RAW SCORE RESPONSE (length: ${scoreText.length}) ---`);
         console.log(scoreText);
+        console.log("--- END OF RAW SCORE RESPONSE ---");
         
         // Parsing logic to separate Markdown from JSON
         try {
-          // 1. Extract JSON block (inside ```json ... ``` or just { ... })
-          const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*})/;
-          const jsonMatch = scoreText.match(jsonRegex);
-          const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[2]) : "";
+          // 1. Extract JSON block (preferring ```json blocks)
+          const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/;
+          const jsonBlockMatch = scoreText.match(jsonBlockRegex);
           
-          if (jsonStr) {
-            const parsedData = JSON.parse(jsonStr.trim());
-            // If the model returned a nested 'data' key, use it, otherwise use the whole object
-            structuredScores = parsedData.data || parsedData;
-            
-            // Everything before the JSON block or opening brace is the markdown
-            summaryScoresMarkdown = scoreText.split(/```json|{/)[0].trim();
+          let jsonStr = "";
+          if (jsonBlockMatch) {
+            jsonStr = jsonBlockMatch[1].trim();
+            // Markdown is everything else, removing the JSON block
+            summaryScoresMarkdown = scoreText.replace(jsonBlockRegex, "").trim();
           } else {
-            // No JSON found, fallback to everything
-            summaryScoresMarkdown = scoreText;
+            // Fallback: look for the last { ... } pair which is usually the JSON object
+            const lastBraceIndex = scoreText.lastIndexOf("}");
+            const firstBraceIndex = scoreText.lastIndexOf("{", lastBraceIndex);
+            
+            if (firstBraceIndex !== -1 && lastBraceIndex !== -1) {
+              jsonStr = scoreText.substring(firstBraceIndex, lastBraceIndex + 1).trim();
+              summaryScoresMarkdown = (scoreText.substring(0, firstBraceIndex) + scoreText.substring(lastBraceIndex + 1)).trim();
+            } else {
+              // No JSON found
+              summaryScoresMarkdown = scoreText;
+            }
           }
           
-          console.log("--- SUMMARY SCORES PARSED ---");
-          console.log(structuredScores);
-        } catch (parseError) {
-          console.error("Error parsing score JSON. Raw text was:", scoreText);
-          
-          // Emergency Fallback: Extract everything before any JSON-like start
-          summaryScoresMarkdown = scoreText.split(/```json|{/)[0].trim();
-          
-          // Try to build a basic data object by looking for "Name": "Score"
-          const candidateNames = tableMarkdown.split('\n')[0].split('|').slice(2).map(n => n.trim());
-          candidateNames.forEach(name => {
-            const regex = new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`, 'i');
-            const match = scoreText.match(regex);
-            if (match) {
-              structuredScores[name] = match[1];
+          if (jsonStr) {
+            try {
+              const parsedData = JSON.parse(jsonStr);
+              structuredScores = parsedData.data || parsedData;
+              console.log("--- SUMMARY SCORES PARSED SUCCESS ---");
+              console.log(structuredScores);
+            } catch (jsonErr) {
+              console.error("Failed to parse extracted JSON string:", jsonStr);
+              throw jsonErr;
             }
-          });
+          }
+        } catch (parseError) {
+          console.error("Error in score parsing logic:", parseError);
+          // Fallback handled by keeping structuredScores as {} and summaryScoresMarkdown as populated above
         }
 
         // Inject summary scores after the table if we have markdown content
@@ -246,6 +275,9 @@ ${tableMarkdown}
       } catch (scoreError) {
         console.error("Error generating summary scores:", scoreError);
       }
+    } else {
+      console.warn("--- WARNING: NO TABLES FOUND IN RESPONSE ---");
+      console.log("Raw text for debugging table regex:", text.substring(0, 500) + "...");
     }
 
     // Add Header and Appendix

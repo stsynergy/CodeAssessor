@@ -23,6 +23,8 @@ export interface Subject {
   language: Language;
   snippets: Snippet[]; // Candidates
   trialsNeeded: number;
+  providerId?: string;
+  modelId?: string;
   createdAt: Date;
   updatedAt?: Date;
 }

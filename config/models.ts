@@ -35,11 +35,11 @@ export const PROVIDERS: ProviderConfig[] = [
     name: "Anthropic",
     apiKey: api.ANTHROPIC_API_KEY,
     models: [
-      { id: "claude-4-5-opus", name: "Claude 4.5 Opus" },
-      { id: "claude-4-5-sonnet", name: "Claude 4.5 Sonnet" },
-      { id: "claude-4-5-haiku", name: "Claude 4.5 Haiku" },
-      { id: "claude-4-opus", name: "Claude 4 Opus" },
-      { id: "claude-4-sonnet", name: "Claude 4 Sonnet" },
+      { id: "claude-opus-4-5", name: "Claude 4.5 Opus" },
+      { id: "claude-sonnet-4-5", name: "Claude 4.5 Sonnet" },
+      { id: "claude-haiku-4-5", name: "Claude 4.5 Haiku" },
+      { id: "claude-opus-4", name: "Claude 4 Opus" },
+      { id: "claude-sonnet-4", name: "Claude 4 Sonnet" },
     ],
   },
   {
@@ -47,7 +47,7 @@ export const PROVIDERS: ProviderConfig[] = [
     name: "Google",
     apiKey: api.GOOGLE_GENERATIVE_AI_API_KEY,
     models: [
-      { id: "gemini-3-pro", name: "Gemini 3 Pro" },
+      { id: "gemini-3-pro-preview", name: "Gemini 3 Pro" },
       { id: "gemini-3-flash-preview", name: "Gemini 3 Flash (Preview)" },
       { id: "gemini-3-flash", name: "Gemini 3 Flash" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
