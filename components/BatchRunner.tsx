@@ -113,7 +113,7 @@ export const BatchRunner: React.FC = () => {
     }, 1000); // 1 second debounce
 
     return () => clearTimeout(timeoutId);
-  }, [selectedSubject?.context, selectedSubject?.snippets]);
+  }, [selectedSubject?.context, selectedSubject?.snippets, selectedSubject?.thingName, selectedSubject?.language]);
 
   const fetchBatches = async () => {
     try {
@@ -204,6 +204,23 @@ export const BatchRunner: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to delete batch:", error);
+    }
+  };
+
+  const deleteSubject = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure? This will delete all trials for this task.")) return;
+
+    try {
+      await fetch(`/api/subjects?id=${id}`, { method: "DELETE" });
+      setSubjects(subjects.filter(s => s._id !== id));
+      if (selectedSubject?._id === id) {
+        setSelectedSubject(null);
+        setTrials([]);
+        setActiveTrial(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete subject:", error);
     }
   };
 
@@ -326,6 +343,21 @@ export const BatchRunner: React.FC = () => {
     }
   };
 
+  const deleteTrial = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this trial?")) return;
+
+    try {
+      await fetch(`/api/trials?id=${id}`, { method: "DELETE" });
+      setTrials(trials.filter(t => t._id !== id));
+      if (activeTrial?._id === id) {
+        setActiveTrial(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete trial:", error);
+    }
+  };
+
   const finalizeTrial = async (trial: Trial) => {
     if (!trial.result) return;
     try {
@@ -378,6 +410,25 @@ export const BatchRunner: React.FC = () => {
       }
     };
     reader.readAsText(file);
+  };
+
+  const addCandidateToExistingSubject = () => {
+    if (!selectedSubject) return;
+    const nextId = (selectedSubject.snippets.length + 1).toString();
+    const updated = {
+      ...selectedSubject,
+      snippets: [...selectedSubject.snippets, { id: nextId, name: `Candidate ${nextId}`, content: "" }]
+    };
+    setSelectedSubject(updated);
+  };
+
+  const removeCandidateFromExistingSubject = (id: string) => {
+    if (!selectedSubject || selectedSubject.snippets.length <= 2) return;
+    const updated = {
+      ...selectedSubject,
+      snippets: selectedSubject.snippets.filter(s => s.id !== id)
+    };
+    setSelectedSubject(updated);
   };
 
   const updateSubjectSnippet = (snippetId: string, field: keyof Snippet, value: string) => {
@@ -503,9 +554,14 @@ export const BatchRunner: React.FC = () => {
           <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Tasks</h3>
           <div className="space-y-1 max-h-[70vh] overflow-y-auto pr-2">
             {subjects.map((s) => (
-              <button key={s._id} onClick={() => setSelectedSubject(s)} className={`w-full text-left p-2 rounded text-xs transition-colors ${selectedSubject?._id === s._id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
-                {s.thingName}
-              </button>
+              <div key={s._id} className="group flex items-center gap-1">
+                <button onClick={() => setSelectedSubject(s)} className={`flex-1 text-left p-2 rounded text-xs transition-colors ${selectedSubject?._id === s._id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
+                  {s.thingName}
+                </button>
+                <button onClick={(e) => deleteSubject(s._id!, e)} className="p-1.5 text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Trash2 size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -515,10 +571,18 @@ export const BatchRunner: React.FC = () => {
           <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Trials</h3>
           <div className="space-y-2">
             {trials.map((t, idx) => (
-              <button key={t._id} onClick={() => setActiveTrial(t)} className={`w-full flex items-center justify-between p-2 rounded border ${activeTrial?._id === t._id ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10' : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-200'}`}>
-                <span className="text-[10px] font-bold">#{idx + 1}</span>
-                {isRunning === t._id ? <Loader2 size={10} className="animate-spin text-blue-500" /> : t.status === 'completed' ? <CheckCircle2 size={10} className="text-green-500" /> : t.status === 'needs_review' ? <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> : <div className="w-1.5 h-1.5 rounded-full bg-zinc-300" />}
-              </button>
+              <div key={t._id} className="group/trial relative">
+                <button onClick={() => setActiveTrial(t)} className={`w-full flex items-center justify-between p-2 rounded border ${activeTrial?._id === t._id ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10' : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-200'}`}>
+                  <span className="text-[10px] font-bold">#{idx + 1}</span>
+                  {isRunning === t._id ? <Loader2 size={10} className="animate-spin text-blue-500" /> : t.status === 'completed' ? <CheckCircle2 size={10} className="text-green-500" /> : t.status === 'needs_review' ? <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> : <div className="w-1.5 h-1.5 rounded-full bg-zinc-300" />}
+                </button>
+                <button 
+                  onClick={(e) => deleteTrial(t._id!, e)} 
+                  className="absolute -top-1 -right-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full p-0.5 text-zinc-400 hover:text-red-500 opacity-0 group-hover/trial:opacity-100 transition-opacity shadow-sm"
+                >
+                  <X size={8} />
+                </button>
+              </div>
             ))}
             <button onClick={() => selectedSubject && createTrial(selectedSubject._id!).then(() => fetchTrials(selectedSubject._id!))} className="w-full py-1.5 border border-dashed border-zinc-300 rounded text-[10px] text-zinc-400 hover:text-zinc-600 hover:border-zinc-400">+ Add Trial</button>
           </div>
@@ -550,23 +614,72 @@ export const BatchRunner: React.FC = () => {
               <div className="flex-1 overflow-y-auto p-6 space-y-8">
                 {/* Input Review */}
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 bg-zinc-50/50 dark:bg-zinc-950/30 p-6 rounded-xl border border-zinc-100 dark:border-zinc-800 max-h-[400px] overflow-y-auto">
+                  <div className="space-y-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Task Settings</h4>
+                        {isSaving && <span className="text-[10px] text-zinc-400 animate-pulse flex items-center gap-1"><RefreshCw size={10} className="animate-spin" /> Saving...</span>}
+                      </div>
+                      <div className="grid gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-zinc-400 uppercase">Task Name</label>
+                          <input 
+                            className="w-full text-xs p-2 bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800 font-bold" 
+                            value={selectedSubject.thingName} 
+                            onChange={(e) => setSelectedSubject({...selectedSubject, thingName: e.target.value})} 
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-zinc-400 uppercase">Language</label>
+                          <select 
+                            className="w-full text-xs p-2 bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800" 
+                            value={selectedSubject.language} 
+                            onChange={(e) => setSelectedSubject({...selectedSubject, language: e.target.value as Language})}
+                          >
+                            <option value="javascript">JavaScript</option>
+                            <option value="typescript">TypeScript</option>
+                            <option value="python">Python</option>
+                            <option value="java">Java</option>
+                            <option value="c">C</option>
+                            <option value="cpp">C++</option>
+                            <option value="csharp">C#</option>
+                            <option value="php">PHP</option>
+                            <option value="rust">Rust</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Context</h4>
+                      <textarea className="w-full text-xs p-3 bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 leading-relaxed min-h-[100px]" value={selectedSubject.context} onChange={(e) => setSelectedSubject({...selectedSubject, context: e.target.value})} />
+                    </div>
+                  </div>
+                  
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Context</h4>
-                      {isSaving && <span className="text-[10px] text-zinc-400 animate-pulse flex items-center gap-1"><RefreshCw size={10} className="animate-spin" /> Saving...</span>}
+                      <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Candidates</h4>
+                      <button onClick={addCandidateToExistingSubject} className="text-[9px] font-bold text-blue-600 hover:underline flex items-center gap-1">
+                        <Plus size={10} /> Add Candidate
+                      </button>
                     </div>
-                    <textarea className="w-full text-xs p-3 bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 leading-relaxed min-h-[100px]" value={selectedSubject.context} onChange={(e) => setSelectedSubject({...selectedSubject, context: e.target.value})} />
-                  </div>
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Candidates</h4>
                     <div className="grid gap-4">
                       {selectedSubject.snippets.map(s => (
                         <div key={s.id} className="space-y-1">
-                          <input 
-                            className="text-[9px] font-bold text-zinc-400 bg-transparent border-none p-0 focus:ring-0 w-full" 
-                            value={s.name} 
-                            onChange={(e) => updateSubjectSnippet(s.id, "name", e.target.value)}
-                          />
+                          <div className="flex items-center justify-between group/cand">
+                            <input 
+                              className="text-[9px] font-bold text-zinc-400 bg-transparent border-none p-0 focus:ring-0 flex-1" 
+                              value={s.name} 
+                              onChange={(e) => updateSubjectSnippet(s.id, "name", e.target.value)}
+                            />
+                            <button 
+                              onClick={() => removeCandidateFromExistingSubject(s.id)}
+                              className="text-zinc-400 hover:text-red-500 opacity-0 group-hover/cand:opacity-100 transition-opacity"
+                              disabled={selectedSubject.snippets.length <= 2}
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          </div>
                           <div className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden h-[150px] overflow-y-auto bg-white dark:bg-zinc-900">
                             <Editor 
                               value={s.content} 
