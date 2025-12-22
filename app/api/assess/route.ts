@@ -21,18 +21,33 @@ export async function POST(req: NextRequest) {
     }
 
     const provider = PROVIDERS.find((p) => p.id === providerId);
-    if (!provider || !provider.apiKey || provider.apiKey === "YOUR_API_KEY_HERE") {
+    if (!provider) {
       return NextResponse.json(
-        { error: `API key for ${providerId} is not configured.` },
+        { error: `Provider ${providerId} not found.` },
+        { status: 404 }
+      );
+    }
+
+    const isConfigured = 
+      (provider.apiKey && provider.apiKey !== "YOUR_API_KEY_HERE" && provider.apiKey !== "") ||
+      (provider.baseURL && provider.baseURL !== "" && provider.id === "ollama");
+
+    if (!isConfigured) {
+      return NextResponse.json(
+        { error: `Provider ${providerId} is not configured in config/.api.ts.` },
         { status: 500 }
       );
     }
 
     console.log(`--- INITIALIZING ENGINE: ${providerId} ---`);
-    const engine = igniteEngine(providerId, { 
-      apiKey: provider.apiKey,
+    const engineConfig: any = { 
       timeout: 120000 // Increase timeout to 120 seconds for large architectural reports
-    });
+    };
+
+    if (provider.apiKey) engineConfig.apiKey = provider.apiKey;
+    if (provider.baseURL) engineConfig.baseURL = provider.baseURL;
+
+    const engine = igniteEngine(providerId, engineConfig);
     const chatModel = engine.buildModel(modelId);
 
     let codeBlockSection = "";
