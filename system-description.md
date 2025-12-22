@@ -6,50 +6,49 @@ Code Assessor is a specialized **Human-in-the-Loop Benchmarking Suite** designed
 
 The system is built on a hierarchical data model to support comparative benchmarking over time:
 
-1.  **Project (Batch)**: A top-level container for a specific test suite (e.g., "Frontend Infrastructure 2025").
-2.  **Task (Subject)**: The definition of a specific challenge. It contains:
+1.  **Candidate (Global)**: The primary identity of an implementation (e.g., "Senior Dev A", "Claude 3.5"). Candidates are stored in a global registry and reused across batches to maintain longitudinal data.
+2.  **Project (Batch)**: A top-level container for a specific test suite (e.g., "Frontend Infrastructure 2025"). A Batch **subscribes** to a lineup of global candidates.
+3.  **Task (Subject)**: The definition of a specific challenge. It contains:
     *   **Context**: The architectural requirements and constraints.
-    *   **Candidates**: Multiple named code snippets (variable count, minimum 2).
-    *   **Model Config**: Remembers the specific LLM Provider and Model assigned to this Task.
-3.  **Trial**: A single execution instance of a Task. Trials are added or removed manually to reach the desired statistical significance.
-4.  **Assessment (Output)**: The raw AI response consisting of a Markdown Report and extracted raw scores (e.g., "7/15").
+    *   **Snippets**: Implementation code for each candidate in the batch lineup, linked via `candidateId`.
+    *   **Model Config**: The specific LLM Provider and Model assigned to this Task.
+4.  **Trial**: A single execution instance of a Task. Trials are added manually to reach desired statistical significance (e.g., running the same task 5 times to see model variance).
+5.  **Assessment (Output)**: The raw AI response consisting of a Markdown Report and extracted raw scores (e.g., "7/15"). Scores are stored keyed by `candidateId`.
 
 ## 🔄 The Benchmarking Workflow (The Loop)
 
 The system follows a strict **Review -> Rerun -> Approve** lifecycle:
 
-1.  **Preparation**: Tasks are defined with their Context and Candidate snippets. All changes (including model selection) are saved automatically via a debounced auto-save mechanism.
-2.  **Execution**: The operator adds a **Trial** manually and triggers it. The system pulls the *current* state of the Task's snippets and context for the LLM call. The system makes two sequential LLM calls:
-    *   **Call 1**: Generates a deep-dive architectural report with a Comparison Matrix.
-    *   **Call 2**: Acts as a "Data Extraction Engine" to parse the matrix into raw score strings.
-3.  **Manual Vetting (Needs Review)**: The AI's output is presented as a draft. 
-    *   If the AI hallucinated or broke the table format, the operator hits **Rerun AI**.
-    *   The operator can switch models between reruns to compare different "Senior Architects."
-4.  **Finalization**: Clicking **Approve Result** locks the trial and marks it as `completed`. The system then automatically selects the next pending trial in the sequence to accelerate the review loop.
+1.  **Registry Management**: Operators define global candidates in the registry.
+2.  **Preparation**: A project is created, and candidates are selected for the "Lineup." Tasks are then defined with their Context. Snippet editors are automatically generated for every candidate in the lineup.
+3.  **Execution**: The operator adds a **Trial** and triggers it. The system:
+    *   Resolves `candidateId` to the current `name` for the prompt.
+    *   Makes two sequential LLM calls: **Call 1** for the architectural report and **Call 2** for numerical data extraction.
+    *   Maps the returned scores from names back to `candidateId` for stable storage.
+4.  **Manual Vetting (Needs Review)**: The AI's output is presented as a draft. If the AI hallucinated or broke format, the operator hits **Rerun AI**.
+5.  **Finalization**: Clicking **Approve Result** locks the trial and marks it as `completed`, allowing it to hit the statistics engine.
 
 ## 📂 Project Structure & Key Files
 
 ### Frontend Components (`/components`)
-*   `Sidebar.tsx`: Global navigation and persistent history of projects (batches).
-*   `SingleRun.tsx`: The "Playground" for quick, one-off tests (saves to a default project).
-*   `BatchRunner.tsx`: The primary benchmarking workspace. Features a three-column layout (Tasks, Trials, Workspace) and an auto-saving Input Review panel for refining benchmarks.
-*   `StatsDashboard.tsx`: The aggregator. It performs all the mathematical normalization (scaling raw strings like "4/15" to 10) and renders the candidate leaderboards.
+*   `Sidebar.tsx`: Global navigation including the **Candidate Registry** and Project History.
+*   `CandidateRegistry.tsx`: UI for managing the global pool of assessed entities.
+*   `BatchRunner.tsx`: The primary benchmarking workspace. Features a three-column layout (Tasks, Trials, Workspace) and a **Manage Lineup** panel for subscribing to candidates.
+*   `StatsDashboard.tsx`: The aggregator. Normalizes raw strings (e.g., "4/15" to 10) and aggregates by `candidateId`.
 
 ### Backend Logic (`/app/api`)
-*   `assess/route.ts`: The "brain." Contains the system prompts and the parsing logic that separates Markdown reports from JSON data blocks.
-*   `subjects/` & `trials/`: CRUD operations for the persistent benchmarking hierarchy.
-*   `providers/`: Dynamically fetches configured LLM models from the environment.
+*   `assess/route.ts`: The "brain." Handles ID-to-Name resolution for prompts and Name-to-ID mapping for results.
+*   `candidates/`, `subjects/`, `trials/`: CRUD operations for the persistent hierarchy.
 
 ### Configuration & Persistence
-*   `types/index.ts`: The Source of Truth for the data model (`Subject`, `Trial`, `AssessmentResult`).
+*   `types/index.ts`: The Source of Truth for the data model (`Candidate`, `Subject`, `Trial`, `Batch`).
 *   `lib/mongodb.ts`: Database connection management.
-*   `config/models.ts`: Registry of all supported LLM providers and their flagship models.
 
 ## 📊 Statistics Logic
-The system deliberately defers all mathematical operations to the frontend. Raw AI data (like "7/15") is stored exactly as returned to maintain integrity. The `StatsDashboard` handles:
+The system deliberately defers mathematical operations to the frontend. Raw AI data is stored exactly as returned. The `StatsDashboard` handles:
 *   **Normalization**: Converting varied scales into a uniform 0-10 score.
-*   **Aggregation**: Grouping scores by Candidate Name across all Approved Trials in the database.
-*   **Consistency Tracking**: Showing how many trials back a specific candidate's score.
+*   **Aggregation**: Grouping scores by `candidateId` across all projects, ensuring that "Senior Dev A" has a consistent performance history even if projects change.
+*   **Consistency Tracking**: Showing trial counts to indicate the weight of the evidence.
 
 ```mermaid
 graph LR
@@ -77,5 +76,4 @@ graph LR
     BR <--> S_API <--> S_COLL
     A_API -- Fetch Names --> C_COLL
     SD -- Group by ID --> S_COLL
-
 ```
