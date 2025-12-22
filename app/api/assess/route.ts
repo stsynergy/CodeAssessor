@@ -79,7 +79,7 @@ Evaluate all provided snippets against these universal dimensions:
 	For the Comparison Matrix:
 			A table comparing implementations side-by-side across key technical features and standards.
 			Rows should include technical features (Prop Spreading, Data Cleaning) and "Soft" features (DX, A11y) + other metrics/assesions, like for example: API Surface, Data Flow, Scalability, Integrity.
-			Include visual indicators (✅/❌) or score (1-5) for quick scanning in fields where possible.
+			Include visual indicators (✅/❌ for discrete metrics), (⚠️ exclusively for risks) and/or score (1-5) for quick scanning in fields where possible.
 	
     No Hyperbole: Eliminate fluff words like "ultimate," "perfect," or "professional." Use objective, technical language.
 
@@ -146,7 +146,8 @@ ${codeBlockSection}
     console.log("--- END OF ANSWER ---\n");
 
     // Extract table and generate summary scores
-    let summaryScores = "";
+    let summaryScoresMarkdown = "";
+    let structuredScores: Record<string, string> = {};
     const tableRegex = /\|(.+)\|.*\n\|( *:?-+:? *\|)+\n(\|(.+)\|.*\n?)+/g;
     const match = text.match(tableRegex);
 
@@ -155,41 +156,92 @@ ${codeBlockSection}
       const scoringPrompt = `
 Based on the following comparison matrix table, calculate a summary score for each implementation (column). 
 
-Identify all metrics (rows) that imply a positive/negative value (e.g., ✅/❌/⚠️ (1/0/-1), High(2)/Medium(1)/Low(0), or numerical scores). 
+Identify all metrics (rows) that imply a positive/negative value (e.g., ✅=1/❌=0/⚠️=-1, High=2/Medium=1/Low=0, or numerical scores). 
 Determine the total maximum points possible and the actual points achieved by each implementation. 
 
+OUTPUT REQUIREMENTS:
 Present the result as a table with only the header (names) and score row in '### Summary Scores' section. 
 Include a brief explanation of the scoring logic used.
-
 Return ONLY the markdown for this 'Summary Scores' section.
+Return ALSO a JSON object at the end - put it inside \`\`\`json \`\`\` code block.
 
-Table:
+JSON STRUCTURE:
+{
+  "Exact Name 1": "7/15",
+  "Exact Name 2": "3/15"
+}
+
+
+TABLE TO ANALYZE:
 ${tableMarkdown}
 `;
 
       try {
         const scoreMessages = [new Message("user", scoringPrompt)];
         const scoreStream = engine.generate(chatModel, scoreMessages, {
-          maxTokens: 2000,
-          temperature: 1.0
+          maxTokens: 6000,
+          temperature: 0.0 // Strict extraction
         });
 
-        summaryScores = "";
+        let scoreText = "";
         for await (const chunk of scoreStream) {
           if (chunk.type === 'content') {
-            summaryScores += chunk.text || "";
+            scoreText += chunk.text || "";
           }
         }
         
-        console.log("--- SUMMARY SCORES GENERATED ---");
-        console.log(summaryScores);
-        console.log("--- END OF SUMMARY ---");
+        console.log("--- RAW SCORE RESPONSE ---");
+        console.log(scoreText);
+        
+        // Parsing logic to separate Markdown from JSON
+        try {
+          // 1. Extract JSON block (inside ```json ... ``` or just { ... })
+          const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*})/;
+          const jsonMatch = scoreText.match(jsonRegex);
+          const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[2]) : "";
+          
+          if (jsonStr) {
+            const parsedData = JSON.parse(jsonStr.trim());
+            // If the model returned a nested 'data' key, use it, otherwise use the whole object
+            structuredScores = parsedData.data || parsedData;
+            
+            // Everything before the JSON block or opening brace is the markdown
+            summaryScoresMarkdown = scoreText.split(/```json|{/)[0].trim();
+          } else {
+            // No JSON found, fallback to everything
+            summaryScoresMarkdown = scoreText;
+          }
+          
+          console.log("--- SUMMARY SCORES PARSED ---");
+          console.log(structuredScores);
+        } catch (parseError) {
+          console.error("Error parsing score JSON. Raw text was:", scoreText);
+          
+          // Emergency Fallback: Extract everything before any JSON-like start
+          summaryScoresMarkdown = scoreText.split(/```json|{/)[0].trim();
+          
+          // Try to build a basic data object by looking for "Name": "Score"
+          const candidateNames = tableMarkdown.split('\n')[0].split('|').slice(2).map(n => n.trim());
+          candidateNames.forEach(name => {
+            const regex = new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`, 'i');
+            const match = scoreText.match(regex);
+            if (match) {
+              structuredScores[name] = match[1];
+            }
+          });
+        }
 
-        // Inject summary scores after the table
-        const tableIndex = text.indexOf(tableMarkdown);
-        if (tableIndex !== -1) {
-          const afterTableIndex = tableIndex + tableMarkdown.length;
-          text = text.slice(0, afterTableIndex) + "\n\n" + summaryScores + "\n\n" + text.slice(afterTableIndex);
+        // Inject summary scores after the table if we have markdown content
+        if (summaryScoresMarkdown) {
+          const tableIndex = text.indexOf(tableMarkdown);
+          if (tableIndex !== -1) {
+            const afterTableIndex = tableIndex + tableMarkdown.length;
+            const formattedMarkdown = summaryScoresMarkdown.includes('### Summary Scores') 
+              ? summaryScoresMarkdown 
+              : "### Summary Scores\n\n" + summaryScoresMarkdown;
+            
+            text = text.slice(0, afterTableIndex) + "\n\n" + formattedMarkdown + "\n\n" + text.slice(afterTableIndex);
+          }
         }
       } catch (scoreError) {
         console.error("Error generating summary scores:", scoreError);
@@ -203,7 +255,10 @@ ${tableMarkdown}
 
     text = header + text + appendix;
 
-    return NextResponse.json({ report: text });
+    return NextResponse.json({ 
+      report: text,
+      scores: structuredScores 
+    });
   } catch (error: any) {
     console.error("LLM Error:", error);
     return NextResponse.json(
