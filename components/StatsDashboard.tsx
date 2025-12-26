@@ -2,6 +2,30 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart2, TrendingUp, Cpu, Award, Zap, AlertTriangle, RefreshCw, User, Filter, Calendar, Code } from 'lucide-react';
 import { Trial, Candidate, Batch, Subject } from '@/types';
 
+const LANGUAGE_COLORS: Record<string, string> = {
+  javascript: '#F7DF1E',
+  typescript: '#3178C6',
+  python: '#3776AB',
+  java: '#ED8B00',
+  c: '#00599C',
+  cpp: '#00599C',
+  csharp: '#512BD4',
+  php: '#777BB4',
+  rust: '#DEA584',
+};
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  javascript: 'JavaScript',
+  typescript: 'TypeScript',
+  python: 'Python',
+  java: 'Java',
+  c: 'C',
+  cpp: 'C++',
+  csharp: 'C#',
+  php: 'PHP',
+  rust: 'Rust',
+};
+
 export const StatsDashboard: React.FC = () => {
   const [trials, setTrials] = useState<Trial[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -12,6 +36,8 @@ export const StatsDashboard: React.FC = () => {
   // Filters
   const [selectedBatchId, setSelectedBatchId] = useState<string>("all");
   const [selectedLanguage, setSelectedLanguage] = useState<string>("all");
+  const [selectedModelId, setSelectedModelId] = useState<string>("all");
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("all");
 
   useEffect(() => {
     Promise.all([
@@ -83,6 +109,8 @@ export const StatsDashboard: React.FC = () => {
   const filteredTrials = useMemo(() => {
     return trials.filter(t => {
       const matchesBatch = selectedBatchId === "all" || t.batchId === selectedBatchId;
+      const matchesModel = selectedModelId === "all" || t.result?.modelId === selectedModelId;
+      const matchesSubject = selectedSubjectId === "all" || t.subjectId === selectedSubjectId;
       
       let matchesLanguage = true;
       if (selectedLanguage !== "all") {
@@ -90,9 +118,9 @@ export const StatsDashboard: React.FC = () => {
         matchesLanguage = subject?.language === selectedLanguage;
       }
       
-      return matchesBatch && matchesLanguage;
+      return matchesBatch && matchesLanguage && matchesModel && matchesSubject;
     });
-  }, [trials, selectedBatchId, selectedLanguage, subjects]);
+  }, [trials, selectedBatchId, selectedLanguage, selectedModelId, selectedSubjectId, subjects]);
 
   // Languages present in subjects
   const availableLanguages = useMemo(() => {
@@ -179,9 +207,10 @@ export const StatsDashboard: React.FC = () => {
     return filteredTrials.reduce((acc: any, curr) => {
       const subject = subjects.find(s => s._id === curr.subjectId);
       const name = subject?.thingName || 'Unknown Subject';
+      const language = subject?.language || 'unknown';
       
       if (!acc[curr.subjectId]) {
-        acc[curr.subjectId] = { totalScore: 0, count: 0, name: name };
+        acc[curr.subjectId] = { totalScore: 0, count: 0, name: name, language: language };
       }
       
       const scores = Object.values(curr.result?.scores || {}).map(s => parseScore(s));
@@ -198,10 +227,32 @@ export const StatsDashboard: React.FC = () => {
     return Object.entries(subjectStats).map(([sid, stats]: [string, any]) => ({
       id: sid,
       name: stats.name,
+      language: stats.language,
       avgScore: (stats.totalScore / stats.count).toFixed(2),
       count: stats.count
-    })).sort((a, b) => parseFloat(a.avgScore) - parseFloat(b.avgScore)); // Show hardest first
+    })).sort((a, b) => {
+      // First group by language
+      if (a.language < b.language) return -1;
+      if (a.language > b.language) return 1;
+      // Then sort by hardest first (lowest avg score)
+      return parseFloat(a.avgScore) - parseFloat(b.avgScore);
+    });
   }, [subjectStats]);
+
+  const taskCandidateStats = useMemo(() => {
+    const matrix: any = {};
+    filteredTrials.forEach(t => {
+      const sid = t.subjectId;
+      Object.entries(t.result?.scores || {}).forEach(([cid, scoreStr]) => {
+        const score = parseScore(scoreStr);
+        if (!matrix[sid]) matrix[sid] = {};
+        if (!matrix[sid][cid]) matrix[sid][cid] = { total: 0, count: 0 };
+        matrix[sid][cid].total += score;
+        matrix[sid][cid].count += 1;
+      });
+    });
+    return matrix;
+  }, [filteredTrials]);
 
   const candidateModelStats = useMemo(() => {
     const stats: any = {};
@@ -257,15 +308,46 @@ export const StatsDashboard: React.FC = () => {
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 shadow-sm">
+            <Filter size={14} className="text-zinc-400" />
+            <select 
+              className="bg-transparent text-sm font-medium focus:outline-none max-w-[150px] truncate"
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+            >
+              <option value="all">All Tasks</option>
+              {subjects.filter(s => selectedBatchId === 'all' || s.batchId === selectedBatchId).map(s => (
+                <option key={s._id} value={s._id}>{s.thingName}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 shadow-sm">
             <Calendar size={14} className="text-zinc-400" />
             <select 
               className="bg-transparent text-sm font-medium focus:outline-none"
               value={selectedBatchId}
-              onChange={(e) => setSelectedBatchId(e.target.value)}
+              onChange={(e) => {
+                setSelectedBatchId(e.target.value);
+                setSelectedSubjectId("all"); // Reset subject when batch changes
+              }}
             >
               <option value="all">All Batches</option>
               {batches.map(b => (
                 <option key={b._id} value={b._id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 shadow-sm">
+            <Cpu size={14} className="text-zinc-400" />
+            <select 
+              className="bg-transparent text-sm font-medium focus:outline-none"
+              value={selectedModelId}
+              onChange={(e) => setSelectedModelId(e.target.value)}
+            >
+              <option value="all">All Judges</option>
+              {allModelIds.map(modelId => (
+                <option key={modelId} value={modelId}>{modelId}</option>
               ))}
             </select>
           </div>
@@ -284,9 +366,14 @@ export const StatsDashboard: React.FC = () => {
             </select>
           </div>
 
-          {(selectedBatchId !== "all" || selectedLanguage !== "all") && (
+          {(selectedBatchId !== "all" || selectedLanguage !== "all" || selectedModelId !== "all" || selectedSubjectId !== "all") && (
             <button 
-              onClick={() => { setSelectedBatchId("all"); setSelectedLanguage("all"); }}
+              onClick={() => { 
+                setSelectedBatchId("all"); 
+                setSelectedLanguage("all"); 
+                setSelectedModelId("all"); 
+                setSelectedSubjectId("all");
+              }}
               className="text-xs text-blue-500 hover:text-blue-600 font-medium"
             >
               Clear Filters
@@ -340,6 +427,74 @@ export const StatsDashboard: React.FC = () => {
           <p className="text-4xl font-black">{Object.keys(candidateStats).length}</p>
         </div>
       </div>
+
+      {/* Candidate Performance by Task Matrix */}
+      {topCandidates.length > 0 && subjectAverages.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <Filter className="text-blue-500" size={20} />
+            Task-Candidate Performance Matrix
+          </h3>
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto shadow-sm">
+            <table className="w-full text-sm table-fixed">
+              <thead className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
+                <tr>
+                  <th className="px-3 py-3 text-left font-semibold sticky left-0 bg-zinc-50 dark:bg-zinc-950 z-10 w-48">Task Subject</th>
+                  <th className="px-2 py-3 text-left font-semibold w-24 text-[10px] uppercase tracking-tighter text-zinc-400">Lang</th>
+                  {topCandidates.map(cand => (
+                    <th key={cand.id} className="px-4 py-3 text-center font-semibold truncate">
+                      {cand.name}
+                    </th>
+                  ))}
+                  <th className="px-4 py-3 text-right font-semibold w-20">Avg</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                {subjectAverages.map((subject) => (
+                  <tr key={subject.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/50 transition-colors">
+                    <td className="px-3 py-3 font-medium text-zinc-700 dark:text-zinc-300 sticky left-0 bg-white dark:bg-zinc-900 z-10 border-r border-zinc-100 dark:border-zinc-800 w-48">
+                      <div className="flex flex-col">
+                        <span className="truncate w-full" title={subject.name}>{subject.name}</span>
+                        <span className="text-[10px] text-zinc-400 font-normal uppercase">{subject.count} trials</span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3 w-24 border-r border-zinc-100 dark:border-zinc-800 bg-zinc-50/20 dark:bg-zinc-950/20">
+                      <div 
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
+                        style={{ 
+                          backgroundColor: `${LANGUAGE_COLORS[subject.language.toLowerCase()] || '#ccc'}20`, 
+                          color: LANGUAGE_COLORS[subject.language.toLowerCase()] || '#666',
+                          border: `1px solid ${LANGUAGE_COLORS[subject.language.toLowerCase()] || '#ccc'}40`
+                        }}
+                      >
+                        {LANGUAGE_NAMES[subject.language.toLowerCase()] || subject.language}
+                      </div>
+                    </td>
+                    {topCandidates.map(cand => {
+                      const stats = taskCandidateStats[subject.id]?.[cand.id];
+                      const score = stats ? (stats.total / stats.count).toFixed(1) : null;
+                      return (
+                        <td key={cand.id} className="px-4 py-3 text-center">
+                          {score ? (
+                            <span className={`font-bold ${parseFloat(score) > 8 ? 'text-green-600' : parseFloat(score) < 5 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                              {score}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-200 dark:text-zinc-800">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-3 text-right bg-zinc-50/50 dark:bg-zinc-950/50 font-bold text-zinc-500">
+                      {subject.avgScore}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-8">
         {/* Candidate Performance Leaderboard */}
@@ -468,7 +623,7 @@ export const StatsDashboard: React.FC = () => {
         <div className="space-y-4">
           <h3 className="text-lg font-bold flex items-center gap-2">
             <Cpu className="text-purple-500" size={20} />
-            Model-specific Candidate Performance
+            Candidate Performance by Judge
           </h3>
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto shadow-sm">
             <table className="w-full text-sm">
@@ -515,14 +670,84 @@ export const StatsDashboard: React.FC = () => {
               </tbody>
             </table>
           </div>
-          <p className="text-[10px] text-zinc-400 italic">
-            Note: Scores are normalized to 0-10. Higher is better. Cells show average score and trial count per model.
-          </p>
         </div>
       )}
+
+      {/* Trial History Log */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-bold flex items-center gap-2">
+          <HistoryIcon className="text-zinc-500" size={20} />
+          Detailed Trial History
+        </h3>
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold">Date</th>
+                <th className="px-4 py-3 text-left font-semibold">Task</th>
+                <th className="px-4 py-3 text-left font-semibold">Judge</th>
+                {topCandidates.map(cand => (
+                  <th key={cand.id} className="px-4 py-3 text-center font-semibold">
+                    {cand.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {filteredTrials.slice(0, 20).map((t) => (
+                <tr key={t._id}>
+                  <td className="px-4 py-3 text-zinc-500 whitespace-nowrap">
+                    {new Date(t.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3 font-medium truncate max-w-[150px]">
+                    {subjects.find(s => s._id === t.subjectId)?.thingName || 'Unknown'}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-500 truncate max-w-[100px]">
+                    {t.result?.modelId}
+                  </td>
+                  {topCandidates.map(cand => {
+                    const scoreStr = t.result?.scores[cand.id];
+                    const score = scoreStr ? parseScore(scoreStr) : null;
+                    return (
+                      <td key={cand.id} className="px-4 py-3 text-center">
+                        {score !== null ? (
+                          <span className={`font-bold ${score > 8 ? 'text-green-600' : score < 5 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                            {score.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-200 dark:text-zinc-800">-</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };
+
+const HistoryIcon: React.FC<{ size?: number, className?: string }> = ({ size = 16, className }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M12 7v5l4 2" />
+  </svg>
+);
 
 const Loader2: React.FC<{ className?: string, size?: number }> = ({ className, size = 16 }) => (
   <RefreshCw className={`${className} animate-spin`} size={size} />
