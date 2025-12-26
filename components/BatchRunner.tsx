@@ -17,6 +17,7 @@ import {
   X,
   HelpCircle,
   Code,
+  Award,
   FileText, 
   Layers,
   Users,
@@ -99,12 +100,19 @@ export const BatchRunner: React.FC = () => {
   useEffect(() => {
     if (selectedSubject?._id) {
       fetchTrials(selectedSubject._id);
-      
-      // Update model dropdowns from subject data
+    }
+  }, [selectedSubject?._id]);
+
+  // Sync toolbar with active trial's specific model
+  useEffect(() => {
+    if (activeTrial) {
+      if (activeTrial.providerId) setSelectedProviderId(activeTrial.providerId);
+      if (activeTrial.modelId) setSelectedModelId(activeTrial.modelId);
+    } else if (selectedSubject) {
       if (selectedSubject.providerId) setSelectedProviderId(selectedSubject.providerId);
       if (selectedSubject.modelId) setSelectedModelId(selectedSubject.modelId);
     }
-  }, [selectedSubject?._id]);
+  }, [activeTrial?._id]);
 
   // Auto-save subject changes with debounce
   useEffect(() => {
@@ -317,6 +325,8 @@ export const BatchRunner: React.FC = () => {
       subjectId,
       batchId: selectedBatch!._id!,
       status: 'pending',
+      providerId: selectedProviderId,
+      modelId: selectedModelId,
       createdAt: new Date()
     };
     const response = await fetch("/api/trials", {
@@ -330,6 +340,11 @@ export const BatchRunner: React.FC = () => {
   const runTrial = async (trial: Trial) => {
     if (!selectedSubject) return;
     setIsRunning(trial._id!);
+    
+    // Use trial-specific model/provider, falling back to selected toolbar values
+    const currentProviderId = trial.providerId || selectedProviderId;
+    const currentModelId = trial.modelId || selectedModelId;
+
     try {
       const response = await fetch("/api/assess", {
         method: "POST",
@@ -338,8 +353,8 @@ export const BatchRunner: React.FC = () => {
           thingName: selectedSubject.thingName, 
           context: selectedSubject.context, 
           snippets: selectedSubject.snippets,
-          providerId: selectedProviderId,
-          modelId: selectedModelId
+          providerId: currentProviderId,
+          modelId: currentModelId
         }),
       });
 
@@ -349,8 +364,8 @@ export const BatchRunner: React.FC = () => {
           ...trial,
           status: 'needs_review',
           result: {
-            providerId: selectedProviderId,
-            modelId: selectedModelId,
+            providerId: currentProviderId,
+            modelId: currentModelId,
             reportMarkdown: data.report,
             scores: data.scores || {},
             timestamp: new Date()
@@ -491,25 +506,45 @@ export const BatchRunner: React.FC = () => {
     });
   };
 
+  const updateTrialModel = async (trial: Trial, pId: string, mId: string) => {
+    const updated = { ...trial, providerId: pId, modelId: mId };
+    setActiveTrial(updated);
+    setTrials(prev => prev.map(t => t._id === updated._id ? updated : t));
+    
+    try {
+      await fetch("/api/trials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      });
+    } catch (error) {
+      console.error("Failed to update trial model:", error);
+    }
+  };
+
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const providerId = e.target.value;
-    setSelectedProviderId(providerId);
-    const provider = availableProviders.find((p) => p.id === providerId);
+    const pId = e.target.value;
+    setSelectedProviderId(pId);
+    const provider = availableProviders.find((p) => p.id === pId);
     if (provider && provider.models.length > 0) {
-      const modelId = provider.models[0].id;
-      setSelectedModelId(modelId);
+      const mId = provider.models[0].id;
+      setSelectedModelId(mId);
       
-      if (selectedSubject) {
-        setSelectedSubject({ ...selectedSubject, providerId, modelId });
+      if (activeTrial) {
+        updateTrialModel(activeTrial, pId, mId);
+      } else if (selectedSubject) {
+        setSelectedSubject({ ...selectedSubject, providerId: pId, modelId: mId });
       }
     }
   };
 
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const modelId = e.target.value;
-    setSelectedModelId(modelId);
-    if (selectedSubject) {
-      setSelectedSubject({ ...selectedSubject, modelId });
+    const mId = e.target.value;
+    setSelectedModelId(mId);
+    if (activeTrial) {
+      updateTrialModel(activeTrial, selectedProviderId, mId);
+    } else if (selectedSubject) {
+      setSelectedSubject({ ...selectedSubject, modelId: mId });
     }
   };
 
@@ -787,32 +822,39 @@ export const BatchRunner: React.FC = () => {
                   {activeTrial ? (
                     activeTrial.result ? (
                       <div className="space-y-8 min-w-0">
-                        {/* Unified Score Bar - Immediate Feedback */}
+                        {/* Unified Ranking Bar - Immediate Feedback */}
                         <div className="bg-zinc-50 dark:bg-zinc-950 p-6 rounded-xl border border-zinc-100 dark:border-zinc-800">
                           <div className="flex items-center justify-between mb-4">
-                            <h5 className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Candidate Performance</h5>
+                            <h5 className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Candidate Ranking</h5>
                             {!activeTrial.result.scores || Object.keys(activeTrial.result.scores).length === 0 && (
-                              <span className="text-[9px] text-amber-500 flex items-center gap-1"><AlertCircle size={10} /> Scores not parsed</span>
+                              <span className="text-[9px] text-amber-500 flex items-center gap-1"><AlertCircle size={10} /> Ranks not parsed</span>
                             )}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {activeTrial.result.scores && Object.entries(activeTrial.result.scores).length > 0 ? (
-                              Object.entries(activeTrial.result.scores).map(([cid, score]) => {
-                                const candidate = allCandidates.find(c => c._id === cid);
-                                const displayName = candidate?.name || cid;
-                                return (
-                                  <div key={cid} className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-center shadow-sm">
-                                    <p className="text-[10px] font-black uppercase text-zinc-400 mb-2 truncate" title={displayName}>{displayName}</p>
-                                    <p className="text-3xl font-black text-blue-600">
-                                      {String(score)}
-                                      {typeof score === 'string' && !score.includes('/') && <span className="text-sm font-normal opacity-40 ml-1">/10</span>}
-                                    </p>
-                                  </div>
-                                );
-                              })
+                              Object.entries(activeTrial.result.scores)
+                                .sort(([, a], [, b]) => parseInt(String(a)) - parseInt(String(b)))
+                                .map(([cid, rank]) => {
+                                  const candidate = allCandidates.find(c => c._id === cid);
+                                  const displayName = candidate?.name || cid;
+                                  return (
+                                    <div key={cid} className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-center shadow-sm relative overflow-hidden">
+                                      {parseInt(String(rank)) === 1 && (
+                                        <div className="absolute top-0 right-0 p-1">
+                                          <Award size={12} className="text-amber-500" />
+                                        </div>
+                                      )}
+                                      <p className="text-[10px] font-black uppercase text-zinc-400 mb-2 truncate" title={displayName}>{displayName}</p>
+                                      <p className="text-3xl font-black text-blue-600">
+                                        <span className="text-sm font-normal opacity-40 mr-1">Rank</span>
+                                        #{String(rank)}
+                                      </p>
+                                    </div>
+                                  );
+                                })
                             ) : (
                               <div className="col-span-full py-4 text-center text-xs text-zinc-400 italic bg-white dark:bg-zinc-900 rounded-lg border border-dashed border-zinc-200 dark:border-zinc-800">
-                                Waiting for numerical assessment...
+                                Waiting for assessment...
                               </div>
                             )}
                           </div>

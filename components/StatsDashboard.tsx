@@ -90,19 +90,14 @@ export const StatsDashboard: React.FC = () => {
     }
   };
 
-  // Helper to parse scores like "7/15" or "8.5" into a numeric value
-  const parseScore = (scoreStr: string | number): number => {
-    if (typeof scoreStr === 'number') return scoreStr;
-    if (!scoreStr) return 0;
-    
-    if (scoreStr.includes('/')) {
-      const [achieved, total] = scoreStr.split('/').map(num => parseFloat(num.trim()));
-      if (isNaN(achieved) || isNaN(total) || total === 0) return 0;
-      return (achieved / total) * 10; // Normalize to 10
-    }
-    
-    const parsed = parseFloat(scoreStr);
-    return isNaN(parsed) ? 0 : parsed;
+  // Helper to calculate Normalized Borda Count points
+  // Formula: (n - Rank) / (n - 1)
+  // Rank 1 of 5 -> (5 - 1) / (5 - 1) = 1.0
+  // Rank 5 of 5 -> (5 - 5) / (5 - 1) = 0.0
+  const calculateBordaPoints = (rankStr: string | number, totalCandidates: number): number => {
+    const rank = typeof rankStr === 'number' ? rankStr : parseInt(String(rankStr));
+    if (isNaN(rank) || totalCandidates <= 1) return 1.0; // Default to top if singular or error
+    return (totalCandidates - rank) / (totalCandidates - 1);
   };
 
   // Filtered Trials
@@ -133,13 +128,16 @@ export const StatsDashboard: React.FC = () => {
     return filteredTrials.reduce((acc: any, curr) => {
       const modelId = curr.result?.modelId || 'unknown';
       if (!acc[modelId]) {
-        acc[modelId] = { totalScore: 0, count: 0, providerId: curr.result?.providerId };
+        acc[modelId] = { totalBorda: 0, count: 0, providerId: curr.result?.providerId };
       }
       
-      const scores = Object.values(curr.result?.scores || {}).map(s => parseScore(s));
-      if (scores.length > 0) {
-        const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-        acc[modelId].totalScore += avg;
+      const trialScores = curr.result?.scores || {};
+      const n = Object.keys(trialScores).length;
+      const points = Object.values(trialScores).map(rank => calculateBordaPoints(rank, n));
+      
+      if (points.length > 0) {
+        const avg = points.reduce((a: number, b: number) => a + b, 0) / points.length;
+        acc[modelId].totalBorda += avg;
         acc[modelId].count += 1;
       }
       return acc;
@@ -149,7 +147,7 @@ export const StatsDashboard: React.FC = () => {
   const modelAverages = useMemo(() => {
     return Object.entries(modelStats).map(([modelId, stats]: [string, any]) => ({
       modelId,
-      avgScore: (stats.totalScore / stats.count).toFixed(2),
+      avgScore: (stats.totalBorda / stats.count * 10).toFixed(2), // Scaled to 10 for UI
       count: stats.count,
       providerId: stats.providerId
     })).sort((a, b) => parseFloat(b.avgScore) - parseFloat(a.avgScore));
@@ -157,26 +155,29 @@ export const StatsDashboard: React.FC = () => {
 
   const candidateStats = useMemo(() => {
     return filteredTrials.reduce((acc: any, curr) => {
-      Object.entries(curr.result?.scores || {}).forEach(([cid, scoreStr]) => {
-        const score = parseScore(scoreStr);
+      const trialScores = curr.result?.scores || {};
+      const n = Object.keys(trialScores).length;
+
+      Object.entries(trialScores).forEach(([cid, rank]) => {
+        const points = calculateBordaPoints(rank, n) * 10; // Scale to 10 for UI
         const candidate = candidates.find(c => c._id === cid);
         const displayName = candidate?.name || cid;
         
         if (!acc[cid]) {
           acc[cid] = { 
-            scores: [], 
-            totalScore: 0, 
+            pointsList: [], 
+            totalPoints: 0, 
             count: 0, 
             displayName: displayName,
             min: 10,
             max: 0
           };
         }
-        acc[cid].scores.push(score);
-        acc[cid].totalScore += score;
+        acc[cid].pointsList.push(points);
+        acc[cid].totalPoints += points;
         acc[cid].count += 1;
-        acc[cid].min = Math.min(acc[cid].min, score);
-        acc[cid].max = Math.max(acc[cid].max, score);
+        acc[cid].min = Math.min(acc[cid].min, points);
+        acc[cid].max = Math.max(acc[cid].max, points);
       });
       return acc;
     }, {});
@@ -184,9 +185,9 @@ export const StatsDashboard: React.FC = () => {
 
   const topCandidates = useMemo(() => {
     return Object.entries(candidateStats).map(([cid, stats]: [string, any]) => {
-      const avg = stats.totalScore / stats.count;
+      const avg = stats.totalPoints / stats.count;
       // Calculate Standard Deviation
-      const squareDiffs = stats.scores.map((s: number) => Math.pow(s - avg, 2));
+      const squareDiffs = stats.pointsList.map((s: number) => Math.pow(s - avg, 2));
       const avgSquareDiff = squareDiffs.reduce((a: number, b: number) => a + b, 0) / stats.count;
       const stdDev = Math.sqrt(avgSquareDiff);
 
@@ -198,7 +199,7 @@ export const StatsDashboard: React.FC = () => {
         min: stats.min.toFixed(1),
         max: stats.max.toFixed(1),
         stdDev: stdDev.toFixed(2),
-        consistency: (10 - stdDev).toFixed(2) // Higher is more consistent
+        consistency: (10 - (stdDev * 2)).toFixed(2) // Heuristic for consistency
       };
     }).sort((a, b) => parseFloat(b.avgScore) - parseFloat(a.avgScore));
   }, [candidateStats]);
@@ -210,13 +211,16 @@ export const StatsDashboard: React.FC = () => {
       const language = subject?.language || 'unknown';
       
       if (!acc[curr.subjectId]) {
-        acc[curr.subjectId] = { totalScore: 0, count: 0, name: name, language: language };
+        acc[curr.subjectId] = { totalPoints: 0, count: 0, name: name, language: language };
       }
       
-      const scores = Object.values(curr.result?.scores || {}).map(s => parseScore(s));
-      if (scores.length > 0) {
-        const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-        acc[curr.subjectId].totalScore += avg;
+      const trialScores = curr.result?.scores || {};
+      const n = Object.keys(trialScores).length;
+      const points = Object.values(trialScores).map(rank => calculateBordaPoints(rank, n) * 10);
+      
+      if (points.length > 0) {
+        const avg = points.reduce((a: number, b: number) => a + b, 0) / points.length;
+        acc[curr.subjectId].totalPoints += avg;
         acc[curr.subjectId].count += 1;
       }
       return acc;
@@ -228,13 +232,13 @@ export const StatsDashboard: React.FC = () => {
       id: sid,
       name: stats.name,
       language: stats.language,
-      avgScore: (stats.totalScore / stats.count).toFixed(2),
+      avgScore: (stats.totalPoints / stats.count).toFixed(2),
       count: stats.count
     })).sort((a, b) => {
       // First group by language
       if (a.language < b.language) return -1;
       if (a.language > b.language) return 1;
-      // Then sort by hardest first (lowest avg score)
+      // Then sort by hardest first (lowest avg points)
       return parseFloat(a.avgScore) - parseFloat(b.avgScore);
     });
   }, [subjectStats]);
@@ -243,11 +247,14 @@ export const StatsDashboard: React.FC = () => {
     const matrix: any = {};
     filteredTrials.forEach(t => {
       const sid = t.subjectId;
-      Object.entries(t.result?.scores || {}).forEach(([cid, scoreStr]) => {
-        const score = parseScore(scoreStr);
+      const trialScores = t.result?.scores || {};
+      const n = Object.keys(trialScores).length;
+
+      Object.entries(trialScores).forEach(([cid, rank]) => {
+        const points = calculateBordaPoints(rank, n) * 10;
         if (!matrix[sid]) matrix[sid] = {};
         if (!matrix[sid][cid]) matrix[sid][cid] = { total: 0, count: 0 };
-        matrix[sid][cid].total += score;
+        matrix[sid][cid].total += points;
         matrix[sid][cid].count += 1;
       });
     });
@@ -258,11 +265,14 @@ export const StatsDashboard: React.FC = () => {
     const stats: any = {};
     filteredTrials.forEach(t => {
       const modelId = t.result?.modelId || 'unknown';
-      Object.entries(t.result?.scores || {}).forEach(([cid, scoreStr]) => {
-        const score = parseScore(scoreStr);
+      const trialScores = t.result?.scores || {};
+      const n = Object.keys(trialScores).length;
+
+      Object.entries(trialScores).forEach(([cid, rank]) => {
+        const points = calculateBordaPoints(rank, n) * 10;
         if (!stats[cid]) stats[cid] = {};
         if (!stats[cid][modelId]) stats[cid][modelId] = { total: 0, count: 0 };
-        stats[cid][modelId].total += score;
+        stats[cid][modelId].total += points;
         stats[cid][modelId].count += 1;
       });
     });
@@ -383,7 +393,7 @@ export const StatsDashboard: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg">
@@ -395,25 +405,10 @@ export const StatsDashboard: React.FC = () => {
         </div>
         <div className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-green-50 dark:bg-green-900/20 text-green-600 rounded-lg">
-              <TrendingUp size={20} />
-            </div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Mean Score</h3>
-          </div>
-          <p className="text-4xl font-black">
-            {filteredTrials.length > 0 ? (filteredTrials.reduce((acc, curr) => {
-              const scores = Object.values(curr.result?.scores || {}).map(s => parseScore(s));
-              return acc + (scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0);
-            }, 0) / filteredTrials.length).toFixed(1) : "0.0"}
-            <span className="text-xl text-zinc-400 font-normal">/10</span>
-          </p>
-        </div>
-        <div className="p-6 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 rounded-lg">
               <Cpu size={20} />
             </div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Models</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Scoring models</h3>
           </div>
           <p className="text-4xl font-black">{Object.keys(modelStats).length}</p>
         </div>
@@ -446,7 +441,6 @@ export const StatsDashboard: React.FC = () => {
                       {cand.name}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-right font-semibold w-20">Avg</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -485,9 +479,6 @@ export const StatsDashboard: React.FC = () => {
                         </td>
                       );
                     })}
-                    <td className="px-4 py-3 text-right bg-zinc-50/50 dark:bg-zinc-950/50 font-bold text-zinc-500">
-                      {subject.avgScore}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -520,7 +511,7 @@ export const StatsDashboard: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-black text-blue-600">{cand.avgScore}</div>
-                    <div className="text-[10px] text-zinc-400 font-bold uppercase">Average Score</div>
+                    <div className="text-[10px] text-zinc-400 font-bold uppercase">Borda Score (0-10)</div>
                   </div>
                 </div>
                 
@@ -549,73 +540,8 @@ export const StatsDashboard: React.FC = () => {
             ))}
           </div>
         </div>
-
-        <div className="space-y-8">
-          {/* Model Consistency */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <RefreshCw className="text-blue-500" size={20} />
-              Model Grading Severity
-            </h3>
-            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Model</th>
-                    <th className="px-4 py-3 text-center font-semibold">Trials</th>
-                    <th className="px-4 py-3 text-right font-semibold">Avg Severity</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {modelAverages.map((m) => (
-                    <tr key={m.modelId}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-zinc-700 dark:text-zinc-300">{m.modelId}</div>
-                        <div className="text-[10px] text-zinc-500 uppercase">{m.providerId}</div>
-                      </td>
-                      <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400 font-medium">{m.count}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-bold text-blue-600">{m.avgScore}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Hardest Subjects */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <AlertTriangle className="text-orange-500" size={20} />
-              Hardest Tasks (Lowest Avg)
-            </h3>
-            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Task Name</th>
-                    <th className="px-4 py-3 text-center font-semibold">Trials</th>
-                    <th className="px-4 py-3 text-right font-semibold">Avg Quality</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {subjectAverages.slice(0, 5).map((s) => (
-                    <tr key={s.id}>
-                      <td className="px-4 py-3 font-medium text-zinc-700 dark:text-zinc-300">
-                        {s.name}
-                      </td>
-                      <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400 font-medium">{s.count}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-bold text-orange-600">{s.avgScore}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        {/* Right side left empty to preserve layout */}
+        <div className="hidden lg:block" />
       </div>
 
       {/* Candidate Performance by Model Breakdown */}
@@ -629,7 +555,11 @@ export const StatsDashboard: React.FC = () => {
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold sticky left-0 bg-zinc-50 dark:bg-zinc-950 z-10">Candidate</th>
+                  <th className="px-4 py-3 text-left font-semibold sticky left-0 bg-zinc-50 dark:bg-zinc-950 z-10">
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-400 whitespace-nowrap">
+                      Candidate ↓ / Judge →
+                    </div>
+                  </th>
                   {allModelIds.map(modelId => (
                     <th key={modelId} className="px-4 py-3 text-center font-semibold whitespace-nowrap">
                       {modelId}
@@ -706,13 +636,12 @@ export const StatsDashboard: React.FC = () => {
                     {t.result?.modelId}
                   </td>
                   {topCandidates.map(cand => {
-                    const scoreStr = t.result?.scores[cand.id];
-                    const score = scoreStr ? parseScore(scoreStr) : null;
+                    const rank = t.result?.scores[cand.id];
                     return (
                       <td key={cand.id} className="px-4 py-3 text-center">
-                        {score !== null ? (
-                          <span className={`font-bold ${score > 8 ? 'text-green-600' : score < 5 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
-                            {score.toFixed(1)}
+                        {rank ? (
+                          <span className={`font-bold ${parseInt(String(rank)) === 1 ? 'text-green-600' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                            #{rank}
                           </span>
                         ) : (
                           <span className="text-zinc-200 dark:text-zinc-800">-</span>

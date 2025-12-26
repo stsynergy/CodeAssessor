@@ -40,6 +40,8 @@ export interface Trial {
   subjectId: string;
   batchId: string;
   status: 'pending' | 'needs_review' | 'completed';
+  providerId?: string;
+  modelId?: string;
   result?: AssessmentResult;
   createdAt: Date;
   updatedAt?: Date;

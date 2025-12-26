@@ -78,40 +78,19 @@ export async function POST(req: NextRequest) {
     });
 
     const prompt = `
-Conduct a rigorous, professional assessment of these ${thingName} implementations. Provide a high-density report that distinguishes between "code that works" and "code that scales."
-1. Assessment Pillars
+Conduct a rigorous, professional assessment of these ${thingName} implementations.
 
-Evaluate all provided snippets against these universal dimensions:
+Code context: ${context || "Not provided"}.
 
-    Architectural Integrity: Examine the interface design. Is the API "open" (extensible/interoperable) or "closed" (hardcoded/rigid)? Does it respect the standards of its environment (e.g., prop spreading in React, memory safety in C++, PEP8 in Python)?
 
-    Data Flow & Logic: Does the code "clean" its inputs? Is there a single source of truth, or is state/data duplicated? Check for defensive programming (error handling, null checks, floating-point safety).
+3. At the very end of your response, provide a ranked list of all candidates from best to worst using the following format:
+<SCORES>
+1: [Candidate Name]
+2: [Candidate Name]
+...
+n: [Candidate Name]
+</SCORES>
 
-    Maintenance & DX (Developer Experience): 
-        Boilerplate: How much code does a developer have to write to use this component?
-        The 80/20 Rule: Does it provide shortcuts for the most common use cases (e.g., a unit prop) while still allowing full control for complex ones?
-        Discovery: Is the component self-documenting (JSDoc, clear prop names)?
-
-    Foundational Baseline vs. Over-engineering: Distinguish between "Standard Practice" (necessary for health) and "Premature Optimization" (unnecessary complexity).
-
-2. Report Configuration
-
-	The 'Comparison Matrix,' 'Technical Analysis,' and 'Implementation Tiers' format.
-
-	For the Comparison Matrix:
-			A table comparing implementations side-by-side across key technical features and standards.
-			Rows should include technical features (Prop Spreading, Data Cleaning) and "Soft" features (DX, A11y) + other metrics/assesions, like for example: API Surface, Data Flow, Scalability, Integrity.
-			Include visual indicators (✅/❌ for discrete metrics), and/or score (1-5) for quick scanning in fields where possible.
-	
-    No Hyperbole: Eliminate fluff words like "ultimate," "perfect," or "professional." Use objective, technical language.
-
-    Technical Analysis: Grouped by impact (Infrastructure, Logic, maintainability). Focus on the consequence of each design choice.
-	
-    Tiered Ranking: Categorize implementations (e.g., Industrial Grade, Foundationally Sound, Feature-Specific, or Localized Prototype).
-
-3. Input Data
-
-Context: ${context || "Not provided"}.
 
 Implementations:
 ${codeBlockSection}
@@ -167,178 +146,55 @@ ${codeBlockSection}
     console.log(text);
     console.log("--- END OF ANSWER ---\n");
 
-    // Extract table and generate summary scores
-    let summaryScoresMarkdown = "";
+    // Extract ranking scores from the <SCORES> block
     let structuredScores: Record<string, string> = {};
-    const tableRegex = /\|(.+)\|.*\n\|( *:?-+:? *\|)+\n(\|(.+)\|.*\n?)+/g;
-    const matches = text.match(tableRegex);
+    const scoresRegex = /<SCORES>([\s\S]*?)<\/SCORES>/i;
+    const scoresMatch = text.match(scoresRegex);
 
-    if (matches && matches.length > 0) {
-      // Find the best table (usually the one with most candidates or just the largest one)
-      let tableMarkdown = matches[0];
-      if (matches.length > 1) {
-        let maxCandidateMatches = -1;
-        for (const m of matches) {
-          let count = 0;
-          snippets.forEach((s: any) => {
-            const name = candidateMap[s.candidateId] || s.name;
-            if (name && m.toLowerCase().includes(name.toLowerCase())) count++;
-          });
-          if (count > maxCandidateMatches) {
-            maxCandidateMatches = count;
-            tableMarkdown = m;
-          }
-        }
-      }
+    if (scoresMatch) {
+      const scoresContent = scoresMatch[1].trim();
+      const lines = scoresContent.split("\n").filter((l) => l.trim() !== "");
 
-      console.log(`--- EXTRACTED TABLE FOR SCORING (length: ${tableMarkdown.length}) ---`);
-      const scoringPrompt = `
-Based on the following comparison matrix table, calculate a summary score for each implementation. 
+      lines.forEach((line) => {
+        const match = line.match(/^\s*(\d+)\s*:\s*(.+)$/);
+        if (match) {
+          const rank = parseInt(match[1]);
+          const candidateName = match[2].trim();
 
-${tableMarkdown}
-
-Identify all metrics that imply a positive/negative value (e.g., ✅=1/❌=0/⚠️=-1, High=2/Medium=1/Low=0, or numerical scores).
-Determine the total maximum points possible and the actual points achieved by each implementation. 
-
-**FORMAT (strictly):**
-1. Markdown horizontal table: header row + scores row (score/total)
-2. "Scoring Logic" (short description how scores were counted.)
-3. JSON code block with format: {"name": "score/total"}
-
-DO NOT INCLUDE ANYTHING ELSE.
-`;
-
-      console.log(`--- SCORING PROMPT SENT TO ${providerId} (${modelId}) ---`);
-      console.log(scoringPrompt);
-      console.log("--- END OF SCORING PROMPT ---");
-
-      try {
-        const scoreMessages = [new Message("user", scoringPrompt)];
-        const scoreStream = engine.generate(chatModel, scoreMessages, {
-          maxTokens: 6000,
-          temperature: 1.0 // Strict extraction
-        });
-
-        let scoreText = "";
-        let scoreReasoning = "";
-        for await (const chunk of scoreStream) {
-          if (chunk.type === 'content') {
-            scoreText += chunk.text || "";
-          } else if (chunk.type === 'reasoning') {
-            scoreReasoning += chunk.text || "";
-          }
-        }
-        
-        if (scoreReasoning) {
-          console.log(`--- SCORING REASONING CAPTURED (${scoreReasoning.length} chars) ---`);
-          // If the model put everything in reasoning (some models do this for extraction), 
-          // we use it as the fallback text
-          if (!scoreText) {
-            scoreText = scoreReasoning;
-          }
-        }
-        
-        console.log(`--- RAW SCORE RESPONSE (length: ${scoreText.length}) ---`);
-        console.log(scoreText);
-        console.log("--- END OF RAW SCORE RESPONSE ---");
-        
-        // Parsing logic to separate Markdown from JSON
-        try {
-          // 1. Extract JSON block (preferring ```json blocks)
-          const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/;
-          const jsonBlockMatch = scoreText.match(jsonBlockRegex);
-          
-          let jsonStr = "";
-          if (jsonBlockMatch) {
-            jsonStr = jsonBlockMatch[1].trim();
-            // Markdown is everything else, removing the JSON block
-            summaryScoresMarkdown = scoreText.replace(jsonBlockRegex, "").trim();
+          // Map back to candidateId
+          const id = nameToIdMap[candidateName.toLowerCase()];
+          if (id) {
+            structuredScores[id] = String(rank);
           } else {
-            // Find the outermost JSON structure (either { } or [ ])
-            const firstBrace = scoreText.indexOf('{');
-            const firstBracket = scoreText.indexOf('[');
-            const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
-            
-            const lastBrace = scoreText.lastIndexOf('}');
-            const lastBracket = scoreText.lastIndexOf(']');
-            const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
-
-            if (start !== -1 && end !== -1 && end > start) {
-              jsonStr = scoreText.substring(start, end + 1).trim();
-              summaryScoresMarkdown = (scoreText.substring(0, start) + scoreText.substring(end + 1)).trim();
+            // Fuzzy match fallback
+            const fuzzyName = Object.keys(nameToIdMap).find(
+              (name) =>
+                candidateName.toLowerCase().includes(name) ||
+                name.includes(candidateName.toLowerCase())
+            );
+            if (fuzzyName) {
+              structuredScores[nameToIdMap[fuzzyName]] = String(rank);
             } else {
-              summaryScoresMarkdown = scoreText;
+              structuredScores[candidateName] = String(rank);
             }
           }
-          
-          if (jsonStr) {
-            try {
-              const parsedData = JSON.parse(jsonStr);
-              // Handle 1-layer nesting: data property or top-level array
-              const data = parsedData.data || parsedData;
-              
-              const processEntry = (name: string, val: any) => {
-                const id = nameToIdMap[name.toLowerCase()];
-                if (id) {
-                  structuredScores[id] = String(val);
-                } else {
-                  // Keep original if not found (might be an adhoc name)
-                  structuredScores[name] = String(val);
-                }
-              };
-
-              if (Array.isArray(data)) {
-                data.forEach(item => {
-                  if (typeof item === 'object' && item !== null) {
-                    Object.entries(item).forEach(([n, v]) => processEntry(n, v));
-                  }
-                });
-              } else if (typeof data === 'object' && data !== null) {
-                Object.entries(data).forEach(([n, v]) => processEntry(n, v));
-              }
-              
-              console.log("--- SUMMARY SCORES PARSED & MAPPED SUCCESS ---");
-              console.log(structuredScores);
-            } catch (jsonErr) {
-              console.error("Failed to parse extracted JSON string:", jsonStr);
-              throw jsonErr;
-            }
-          }
-        } catch (parseError) {
-          console.error("Error in score parsing logic:", parseError);
-          // Fallback handled by keeping structuredScores as {} and summaryScoresMarkdown as populated above
         }
-
-        // Inject summary scores after the table if we have markdown content
-        if (summaryScoresMarkdown) {
-          const tableIndex = text.indexOf(tableMarkdown);
-          if (tableIndex !== -1) {
-            const afterTableIndex = tableIndex + tableMarkdown.length;
-            const formattedMarkdown = summaryScoresMarkdown.includes('### Summary Scores') 
-              ? summaryScoresMarkdown 
-              : "### Summary Scores\n\n" + summaryScoresMarkdown;
-            
-            text = text.slice(0, afterTableIndex) + "\n\n" + formattedMarkdown + "\n\n" + text.slice(afterTableIndex);
-          }
-        }
-      } catch (scoreError) {
-        console.error("Error generating summary scores:", scoreError);
-      }
+      });
+      console.log("--- SCORES EXTRACTED (RAW RANKS) ---");
+      console.log(structuredScores);
     } else {
-      console.warn("--- WARNING: NO TABLES FOUND IN RESPONSE ---");
-      console.log("Raw text for debugging table regex:", text.substring(0, 500) + "...");
+      console.warn("--- WARNING: NO <SCORES> BLOCK FOUND IN RESPONSE ---");
     }
 
     // Add Header and Appendix
     const header = `# Architectural Assessment Report for: ${thingName}\n\r\n**Code context:** ${context || "Not provided"} \r\n\r\n`;
-    
     const appendix = `\n\n---\n\n### Appendix: Assessment Methodology\n\nThis report was generated by an AI architectural assessment engine using the following configuration:\n\n- **Provider:** ${providerId}\n- **Model:** ${modelId}\n\n#### Prompt Configuration:\n\n\`\`\`text\n${prompt.trim()}\n\`\`\``;
 
     text = header + text + appendix;
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       report: text,
-      scores: structuredScores 
+      scores: structuredScores,
     });
   } catch (error: any) {
     console.error("LLM Error:", error);
