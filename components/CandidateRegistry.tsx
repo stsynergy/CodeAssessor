@@ -209,3 +209,4 @@ export const CandidateRegistry: React.FC = () => {
 };
 
 
+

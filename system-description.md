@@ -11,9 +11,8 @@ The system is built on a hierarchical data model to support comparative benchmar
 3.  **Task (Subject)**: The definition of a specific challenge. It contains:
     *   **Context**: The architectural requirements and constraints.
     *   **Snippets**: Implementation code for each candidate in the batch lineup, linked via `candidateId`.
-    *   **Model Config**: The specific LLM Provider and Model assigned to this Task.
-4.  **Trial**: A single execution instance of a Task. Trials are added manually to reach desired statistical significance (e.g., running the same task 5 times to see model variance).
-5.  **Assessment (Output)**: The raw AI response consisting of a Markdown Report and extracted raw scores (e.g., "7/15"). Scores are stored keyed by `candidateId`.
+4.  **Trial**: A single execution instance of a Task. Each trial is assigned a specific **LLM Provider and Model**, allowing for multi-judge assessments of the same task.
+5.  **Assessment (Output)**: The raw AI response consisting of a Markdown Report and an extracted ranking (e.g., "1, 2, 3"). Rankings are stored exactly as returned by the model.
 
 ## 🔄 The Benchmarking Workflow (The Loop)
 
@@ -21,10 +20,10 @@ The system follows a strict **Review -> Rerun -> Approve** lifecycle:
 
 1.  **Registry Management**: Operators define global candidates in the registry.
 2.  **Preparation**: A project is created, and candidates are selected for the "Lineup." Tasks are then defined with their Context. Snippet editors are automatically generated for every candidate in the lineup.
-3.  **Execution**: The operator adds a **Trial** and triggers it. The system:
+3.  **Execution**: The operator adds a **Trial**, selects a **Model**, and triggers it. The system:
     *   Resolves `candidateId` to the current `name` for the prompt.
-    *   Makes two sequential LLM calls: **Call 1** for the architectural report and **Call 2** for numerical data extraction.
-    *   Maps the returned scores from names back to `candidateId` for stable storage.
+    *   Makes a **single LLM call** for both the architectural report and a structured ranking block (`<SCORES>`).
+    *   Maps the returned ranks from names back to `candidateId` for stable storage.
 4.  **Manual Vetting (Needs Review)**: The AI's output is presented as a draft. If the AI hallucinated or broke format, the operator hits **Rerun AI**.
 5.  **Finalization**: Clicking **Approve Result** locks the trial and marks it as `completed`, allowing it to hit the statistics engine.
 
@@ -45,10 +44,11 @@ The system follows a strict **Review -> Rerun -> Approve** lifecycle:
 *   `lib/mongodb.ts`: Database connection management.
 
 ## 📊 Statistics Logic
-The system deliberately defers mathematical operations to the frontend. Raw AI data is stored exactly as returned. The `StatsDashboard` handles:
-*   **Normalization**: Converting varied scales into a uniform 0-10 score.
-*   **Aggregation**: Grouping scores by `candidateId` across all projects, ensuring that "Senior Dev A" has a consistent performance history even if projects change.
-*   **Consistency Tracking**: Showing trial counts to indicate the weight of the evidence.
+The system deliberately defers mathematical operations to the frontend. Raw AI rankings (1..n) are stored exactly as returned. The `StatsDashboard` handles:
+*   **Normalized Borda Count**: Converting raw ranks into a uniform 0-10 relative superiority score. 
+    *   *Formula*: $\frac{n - \text{Rank}}{n - 1} \times 10$
+*   **Aggregation**: Grouping these Borda points by `candidateId` across all projects and tasks.
+*   **Consistency Tracking**: Using standard deviation of Borda scores to show performance stability.
 
 ```mermaid
 graph LR

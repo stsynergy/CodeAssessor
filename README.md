@@ -11,11 +11,11 @@ Code Assessor is a Next.js application designed to perform deep-dive architectur
 
 - **Multi-Provider Support**: Choose between OpenAI, Anthropic, Google, and Grok (xAI).
 - **Flagship Model Access**: Access the latest models like GPT-4o, Claude 3.5, and Gemini 1.5.
+- **Per-Trial Model Assignment**: Assign different LLM judges to individual trials within the same task for objective cross-model comparison.
 - **Batch Assessment Engine**: Manage multiple assessments in a single batch.
 - **Review-First Workflow**: Run assessments, review AI output, and rerun as needed before finalizing results.
-- **Automated Scoring Engine**: Automatically parses the assessment matrix to calculate weighted summary scores for each candidate.
-- **Data Persistence**: Store all your assessments and batches in MongoDB for historical analysis.
-- **Cross-Model Statistics**: Compare performance across different LLM models and implementation strategies.
+- **Single-Call Ranking Engine**: Automatically parses a mandated `<SCORES>` block from the model response to extract candidate rankings without needing secondary LLM calls.
+- **Borda Count Statistics**: Uses Normalized Borda Count to aggregate performance across trials with varying candidate counts.
 - **PDF Export**: Generate professional PDF reports for individual assessments.
 
 ## 🛠️ Tech Stack
@@ -103,7 +103,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
    - Select the language (JS/Python).
    - Paste your code into the editor.
 5. **Generate**: Click "Generate Architectural Report".
-6. **Review & Export**: Once the AI generates the report, review the comparison matrix and summary scores. Click "Export as PDF" to save the report for your team.
+6. **Review & Export**: Once the AI generates the report, review the ranking and tiered categories. Click "Export as PDF" to save the report for your team.
 
 ## 📜 Assessment Methodology
 
