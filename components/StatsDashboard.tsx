@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart2, TrendingUp, Cpu, Award, Zap, AlertTriangle, RefreshCw, User, Filter, Calendar, Code } from 'lucide-react';
+import { BarChart2, TrendingUp, Cpu, Award, Zap, AlertTriangle, RefreshCw, User, Filter, Calendar, Code, Download } from 'lucide-react';
 import { Trial, Candidate, Batch, Subject } from '@/types';
 
 const LANGUAGE_COLORS: Record<string, string> = {
@@ -287,6 +287,68 @@ export const StatsDashboard: React.FC = () => {
     return Array.from(models).sort();
   }, [filteredTrials]);
 
+  const handleExportCSV = () => {
+    const langSet = new Set<string>();
+    const candSet = new Set<string>();
+    const matrix: Record<string, Record<string, { total: number, count: number }>> = {};
+
+    filteredTrials.forEach(t => {
+      const subject = subjects.find(s => s._id === t.subjectId);
+      const lang = subject?.language || 'unknown';
+      langSet.add(lang);
+
+      const trialScores = t.result?.scores || {};
+      const n = Object.keys(trialScores).length;
+
+      Object.entries(trialScores).forEach(([cid, rank]) => {
+        candSet.add(cid);
+        const points = calculateBordaPoints(rank, n) * 10;
+        
+        if (!matrix[lang]) matrix[lang] = {};
+        if (!matrix[lang][cid]) matrix[lang][cid] = { total: 0, count: 0 };
+        
+        matrix[lang][cid].total += points;
+        matrix[lang][cid].count += 1;
+      });
+    });
+
+    const sortedLangs = Array.from(langSet).sort();
+    const sortedCandIds = Array.from(candSet).sort((a, b) => {
+      const candA = candidates.find(c => c._id === a);
+      const candB = candidates.find(c => c._id === b);
+      return (candA?.name || '').localeCompare(candB?.name || '');
+    });
+
+    const header = ['Language', ...sortedCandIds.map(cid => {
+      const cand = candidates.find(c => c._id === cid);
+      return cand?.description || cand?.name || cid;
+    })].join(';');
+
+    const rows = sortedLangs.map(lang => {
+      const row = [LANGUAGE_NAMES[lang.toLowerCase()] || lang];
+      sortedCandIds.forEach(cid => {
+        const stats = matrix[lang]?.[cid];
+        if (stats) {
+          row.push((stats.total / stats.count).toFixed(1));
+        } else {
+          row.push('');
+        }
+      });
+      return row.join(';');
+    });
+
+    const csvContent = [header, ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `benchmark_stats_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full py-40">
@@ -389,6 +451,14 @@ export const StatsDashboard: React.FC = () => {
               Clear Filters
             </button>
           )}
+
+          <button 
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors shadow-sm"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
         </div>
       </div>
 

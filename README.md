@@ -9,12 +9,12 @@ Code Assessor is a Next.js application designed to perform deep-dive architectur
 
 ## ✨ Features
 
-- **Multi-Provider Support**: Choose between OpenAI, Anthropic, Google, and Grok (xAI).
-- **Flagship Model Access**: Access the latest models like GPT-4o, Claude 3.5, and Gemini 1.5.
+- **Multi-Provider Support**: Choose between OpenAI, Anthropic, Google, OpenRouter or Local Ollama.
+- **Flagship Model Access**: Access the latest models like GPT-5.2, Claude 4.5, and Gemini 3.
 - **Per-Trial Model Assignment**: Assign different LLM judges to individual trials within the same task for objective cross-model comparison.
 - **Batch Assessment Engine**: Manage multiple assessments in a single batch.
 - **Review-First Workflow**: Run assessments, review AI output, and rerun as needed before finalizing results.
-- **Single-Call Ranking Engine**: Automatically parses a mandated `<SCORES>` block from the model response to extract candidate rankings without needing secondary LLM calls.
+- **Single-Call Ranking Engine**: Automatically parses a mandated `<SCORES>` block from the model response to extract candidate rankings.
 - **Borda Count Statistics**: Uses Normalized Borda Count to aggregate performance across trials with varying candidate counts.
 - **PDF Export**: Generate professional PDF reports for individual assessments.
 
@@ -83,8 +83,8 @@ The Batch Runner is designed for rigorous benchmarking where you control the qua
     "context": "React component for user login.",
     "language": "typescript",
     "snippets": [
-      { "id": "1", "name": "Basic", "content": "..." },
-      { "id": "2", "name": "Optimized", "content": "..." }
+      { "id": "1", "name": "C45SO", "content": "..." },
+      { "id": "2", "name": "C45OP", "content": "..." }
     ]
   }
 ]
