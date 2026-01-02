@@ -1,14 +1,14 @@
 import { MongoClient, Db } from "mongodb";
-import * as api from "../config/.api";
 
-const uri = (api as any).MONGODB_URI || process.env.MONGODB_URI;
+const uri = process.env.MONGODB_URI;
+const dbName = process.env.MONGODB_DB || "code-assessor";
 const options = {};
 
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
 if (!uri) {
-  throw new Error("Please add your Mongo URI to config/.api.ts or process.env.MONGODB_URI");
+  throw new Error("Please add your MONGODB_URI to .env.local or process.env");
 }
 
 if (process.env.NODE_ENV === "development") {
@@ -31,7 +31,7 @@ if (process.env.NODE_ENV === "development") {
 
 export async function getDb(): Promise<Db> {
   const connectedClient = await clientPromise;
-  return connectedClient.db("code-assessor");
+  return connectedClient.db(dbName);
 }
 
 export default clientPromise;

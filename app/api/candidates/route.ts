@@ -9,7 +9,13 @@ export async function GET(req: NextRequest) {
     const id = searchParams.get("id");
 
     if (id) {
+      if (!ObjectId.isValid(id)) {
+        return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+      }
       const candidate = await db.collection("candidates").findOne({ _id: new ObjectId(id) });
+      if (!candidate) {
+        return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+      }
       return NextResponse.json(candidate);
     }
 
@@ -29,19 +35,30 @@ export async function POST(req: NextRequest) {
   try {
     const db = await getDb();
     const body = await req.json();
-    const { _id, ...data } = body;
+    const { _id, name, description } = body;
+
+    const data: any = {
+      name,
+      description,
+      updatedAt: new Date(),
+    };
 
     if (_id) {
-      await db.collection("candidates").updateOne(
+      if (!ObjectId.isValid(_id)) {
+        return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+      }
+      const result = await db.collection("candidates").updateOne(
         { _id: new ObjectId(_id) },
-        { $set: { ...data, updatedAt: new Date() } }
+        { $set: data }
       );
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+      }
       return NextResponse.json({ _id, ...data });
     } else {
       const result = await db.collection("candidates").insertOne({
         ...data,
         createdAt: new Date(),
-        updatedAt: new Date(),
       });
       return NextResponse.json({ _id: result.insertedId, ...data });
     }
@@ -60,7 +77,14 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    await db.collection("candidates").deleteOne({ _id: new ObjectId(id) });
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+    }
+
+    const result = await db.collection("candidates").deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

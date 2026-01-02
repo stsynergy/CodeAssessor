@@ -1,4 +1,3 @@
-import * as api from "./.api";
 
 export interface ModelConfig {
   id: string;
@@ -17,7 +16,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "openai",
     name: "OpenAI",
-    apiKey: api.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY,
     models: [
       { id: "gpt-5.2", name: "GPT-5.2" },
       { id: "gpt-5.2-codex", name: "GPT-5.2-Codex" },
@@ -33,7 +32,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "anthropic",
     name: "Anthropic",
-    apiKey: api.ANTHROPIC_API_KEY,
+    apiKey: process.env.ANTHROPIC_API_KEY,
     models: [
       { id: "claude-opus-4-5", name: "Claude 4.5 Opus" },
       { id: "claude-sonnet-4-5", name: "Claude 4.5 Sonnet" },
@@ -45,7 +44,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "google",
     name: "Google",
-    apiKey: api.GOOGLE_GENERATIVE_AI_API_KEY,
+    apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     models: [
       { id: "gemini-3-pro-preview", name: "Gemini 3 Pro" },
       { id: "gemini-3-flash-preview", name: "Gemini 3 Flash (Preview)" },
@@ -56,7 +55,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "openrouter",
     name: "OpenRouter",
-    apiKey: api.OPENROUTER_API_KEY,
+    apiKey: process.env.OPENROUTER_API_KEY,
     models: [
         { id: "google/gemini-3-pro", name: "Gemini 3 Pro" },
         { id: "google/gemini-3-flash-preview", name: "Gemini 3 Flash (Preview)" },
@@ -88,7 +87,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "xai",
     name: "Grok (xAI)",
-    apiKey: api.XAI_API_KEY,
+    apiKey: process.env.XAI_API_KEY,
     models: [
       { id: "grok-4-1-fast-reasoning", name: "Grok 4.1" },
       { id: "grok-code-fast-1", name: "Grok code fast 1" },
@@ -98,7 +97,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
-    apiKey: api.DEEPSEEK_API_KEY,
+    apiKey: process.env.DEEPSEEK_API_KEY,
     models: [
       { id: "deepseek-chat", name: "DeepSeek Chat" },
       { id: "deepseek-reasoner", name: "DeepSeek Reasoner" },
@@ -107,7 +106,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "mistralai",
     name: "Mistral AI",
-    apiKey: api.MISTRALAI_API_KEY,
+    apiKey: process.env.MISTRALAI_API_KEY,
     models: [
       { id: "mistral-large-2512", name: "Mistral Large 3" },
       { id: "mistral-medium-2508", name: "Mistral Medium 3.1" },
@@ -118,7 +117,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "groq",
     name: "Groq",
-    apiKey: api.GROQ_API_KEY,
+    apiKey: process.env.GROQ_API_KEY,
     models: [
       { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
       { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B" },
@@ -127,7 +126,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "cerebras",
     name: "Cerebras",
-    apiKey: api.CEREBRAS_API_KEY,
+    apiKey: process.env.CEREBRAS_API_KEY,
     models: [
       { id: "llama3.1-70b", name: "Llama 3.1 70B" },
       { id: "llama3.1-8b", name: "Llama 3.1 8B" },
@@ -136,7 +135,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "meta",
     name: "Meta",
-    apiKey: api.META_API_KEY,
+    apiKey: process.env.META_API_KEY,
     models: [
       { id: "llama3.1-405b", name: "Llama 3.1 405B" },
       { id: "llama3.1-70b", name: "Llama 3.1 70B" },
@@ -145,7 +144,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "ollama",
     name: "Ollama (Local)",
-    baseURL: api.OLLAMA_BASE_URL,
+    baseURL: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
     models: [
       { id: "llama3.1", name: "Llama 3.1" },
       { id: "mistral", name: "Mistral" },
@@ -155,7 +154,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "azure",
     name: "Azure AI",
-    apiKey: api.AZURE_API_KEY,
+    apiKey: process.env.AZURE_API_KEY,
     models: [
       { id: "gpt-4", name: "GPT-4" },
       { id: "gpt-35-turbo", name: "GPT-3.5 Turbo" },

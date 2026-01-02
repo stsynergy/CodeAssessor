@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     if (!isConfigured) {
       return NextResponse.json(
-        { error: `Provider ${providerId} is not configured in config/.api.ts.` },
+        { error: `Provider ${providerId} is not configured in .env.local.` },
         { status: 500 }
       );
     }
@@ -46,25 +46,47 @@ export async function POST(req: NextRequest) {
       timeout: 120000 // Increase timeout to 120 seconds for large architectural reports
     };
 
-    if (provider.apiKey) engineConfig.apiKey = provider.apiKey;
+    if (provider.apiKey) {
+      engineConfig.apiKey = provider.apiKey;
+    }
     if (provider.baseURL) engineConfig.baseURL = provider.baseURL;
 
     const db = await getDb();
     
-    // Resolve candidate names for the prompt
+    // Resolve candidate names for the prompt (Batch fetch to avoid N+1)
     const candidateMap: Record<string, string> = {}; // ID -> Name
     const nameToIdMap: Record<string, string> = {}; // Name -> ID
     
+    const dbCandidateIds = Array.from(new Set(
+      snippets
+        .filter((s: any) => s.candidateId && ObjectId.isValid(s.candidateId))
+        .map((s: any) => new ObjectId(s.candidateId))
+    ));
+
+    if (dbCandidateIds.length > 0) {
+      const candidates = await db.collection("candidates")
+        .find({ _id: { $in: dbCandidateIds } })
+        .toArray();
+      
+      candidates.forEach(c => {
+        const idStr = c._id.toString();
+        candidateMap[idStr] = c.name;
+        nameToIdMap[c.name.toLowerCase()] = idStr;
+      });
+    }
+
+    // Handle adhoc snippets or missing candidates
     for (const s of snippets) {
       if (s.candidateId) {
-        const candidate = await db.collection("candidates").findOne({ _id: new ObjectId(s.candidateId) });
-        const name = candidate ? candidate.name : `Candidate ${s.candidateId}`;
-        candidateMap[s.candidateId] = name;
-        nameToIdMap[name.toLowerCase()] = s.candidateId;
+        if (!candidateMap[s.candidateId]) {
+          const name = `Candidate ${s.candidateId}`;
+          candidateMap[s.candidateId] = name;
+          nameToIdMap[name.toLowerCase()] = s.candidateId;
+        }
       } else if (s.name) {
-        // Fallback for adhoc snippets
-        candidateMap[s.id || s.name] = s.name;
-        nameToIdMap[s.name.toLowerCase()] = s.id || s.name;
+        const id = s.id || s.name;
+        candidateMap[id] = s.name;
+        nameToIdMap[s.name.toLowerCase()] = id;
       }
     }
 

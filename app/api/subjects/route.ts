@@ -10,13 +10,19 @@ export async function GET(req: NextRequest) {
     const batchId = searchParams.get("batchId");
 
     if (id) {
+      if (!ObjectId.isValid(id)) {
+        return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+      }
       const subject = await db.collection("subjects").findOne({ _id: new ObjectId(id) });
+      if (!subject) {
+        return NextResponse.json({ error: "Subject not found" }, { status: 404 });
+      }
       return NextResponse.json(subject);
     }
 
     const query: any = {};
     if (batchId) {
-      query.batchId = batchId;
+      query.batchId = ObjectId.isValid(batchId) ? new ObjectId(batchId) : batchId;
     }
 
     const subjects = await db
@@ -35,19 +41,39 @@ export async function POST(req: NextRequest) {
   try {
     const db = await getDb();
     const body = await req.json();
-    const { _id, ...data } = body;
+    const { _id, batchId, thingName, context, language, snippets, trialsNeeded, providerId, modelId } = body;
+
+    const data: any = {
+      batchId: batchId && ObjectId.isValid(batchId) ? new ObjectId(batchId) : batchId,
+      thingName,
+      context,
+      language,
+      snippets: (snippets || []).map((s: any) => ({
+        ...s,
+        candidateId: s.candidateId && ObjectId.isValid(s.candidateId) ? new ObjectId(s.candidateId) : s.candidateId
+      })),
+      trialsNeeded: trialsNeeded || 1,
+      providerId,
+      modelId,
+      updatedAt: new Date(),
+    };
 
     if (_id) {
-      await db.collection("subjects").updateOne(
+      if (!ObjectId.isValid(_id)) {
+        return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+      }
+      const result = await db.collection("subjects").updateOne(
         { _id: new ObjectId(_id) },
-        { $set: { ...data, updatedAt: new Date() } }
+        { $set: data }
       );
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: "Subject not found" }, { status: 404 });
+      }
       return NextResponse.json({ _id, ...data });
     } else {
       const result = await db.collection("subjects").insertOne({
         ...data,
         createdAt: new Date(),
-        updatedAt: new Date(),
       });
       return NextResponse.json({ _id: result.insertedId, ...data });
     }
@@ -66,9 +92,18 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    await db.collection("subjects").deleteOne({ _id: new ObjectId(id) });
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+    }
+
+    const result = await db.collection("subjects").deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: "Subject not found" }, { status: 404 });
+    }
     // Also delete associated trials
-    await db.collection("trials").deleteMany({ subjectId: id });
+    await db.collection("trials").deleteMany({ 
+      subjectId: ObjectId.isValid(id) ? new ObjectId(id) : id 
+    });
     
     return NextResponse.json({ success: true });
   } catch (error: any) {

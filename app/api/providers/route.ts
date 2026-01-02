@@ -4,6 +4,7 @@ import { getAvailableProviders } from "@/config/models";
 export async function GET() {
   try {
     const providers = getAvailableProviders();
+    
     console.log("Available providers identified:", providers.map(p => p.id));
     return NextResponse.json({ providers });
   } catch (error: any) {

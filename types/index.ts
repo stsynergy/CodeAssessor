@@ -1,7 +1,7 @@
 export type Language = "javascript" | "typescript" | "python" | "java" | "c" | "cpp" | "csharp" | "php" | "rust";
 
 export interface Candidate {
-  _id?: string;
+  _id?: any;
   name: string;
   description?: string;
   createdAt?: Date;
@@ -9,7 +9,7 @@ export interface Candidate {
 }
 
 export interface Snippet {
-  candidateId: string;
+  candidateId: any;
   content: string;
 }
 
@@ -22,8 +22,8 @@ export interface AssessmentResult {
 }
 
 export interface Subject {
-  _id?: string;
-  batchId: string;
+  _id?: any;
+  batchId: any;
   thingName: string;
   context: string;
   language: Language;
@@ -36,9 +36,9 @@ export interface Subject {
 }
 
 export interface Trial {
-  _id?: string;
-  subjectId: string;
-  batchId: string;
+  _id?: any;
+  subjectId: any;
+  batchId: any;
   status: 'pending' | 'needs_review' | 'completed';
   providerId?: string;
   modelId?: string;
@@ -48,9 +48,9 @@ export interface Trial {
 }
 
 export interface Batch {
-  _id?: string;
+  _id?: any;
   name: string;
-  candidateIds: string[]; // Global candidates active for this batch
+  candidateIds: any[]; // Global candidates active for this batch
   description?: string;
   createdAt: Date;
   updatedAt?: Date;
