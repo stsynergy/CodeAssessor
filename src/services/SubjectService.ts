@@ -1,5 +1,8 @@
 import { subjectRepository } from "@/repositories/SubjectRepository";
-import { Subject } from "@/types";
+import { candidateRepository } from "@/repositories/CandidateRepository";
+import { trialRepository } from "@/repositories/TrialRepository";
+import { batchRepository } from "@/repositories/BatchRepository";
+import { Subject, Snippet } from "@/types";
 import { WithId, ObjectId } from "mongodb";
 
 export class SubjectService {
@@ -33,6 +36,68 @@ export class SubjectService {
 
   async deleteSubject(id: string): Promise<boolean> {
     return subjectRepository.delete(id);
+  }
+
+  async importSubjects(batchId: string, items: any[]): Promise<void> {
+    const allCandidates = await candidateRepository.findAll();
+    const batch = await batchRepository.findById(batchId);
+    if (!batch) throw new Error("Batch not found");
+
+    const batchCandidateIds = new Set((batch.candidateIds || []).map(id => id.toString()));
+    let lineupChanged = false;
+    
+    for (const item of items) {
+      const mappedSnippets: Snippet[] = [];
+      if (Array.isArray(item.snippets)) {
+        for (const s of item.snippets) {
+          const globalCand = allCandidates.find(c => c.name.toLowerCase() === s.name.toLowerCase());
+          if (globalCand) {
+            mappedSnippets.push({
+              candidateId: globalCand._id!,
+              content: s.content
+            });
+
+            // Ensure candidate is in the batch lineup
+            if (!batchCandidateIds.has(globalCand._id.toString())) {
+              batchCandidateIds.add(globalCand._id.toString());
+              lineupChanged = true;
+            }
+          }
+        }
+      }
+
+      const subjectData: Omit<Subject, "_id"> = {
+        batchId: new ObjectId(batchId),
+        thingName: item.thingName || "Untitled",
+        context: item.context || "",
+        language: item.language || "javascript",
+        trialsNeeded: item.trialsNeeded || 3,
+        snippets: mappedSnippets,
+        providerId: item.providerId,
+        modelId: item.modelId,
+        createdAt: new Date()
+      };
+
+      const savedSubject = await subjectRepository.create(subjectData as any);
+      
+      // Create initial trials
+      for (let i = 0; i < (subjectData.trialsNeeded || 3); i++) {
+        await trialRepository.create({
+          subjectId: savedSubject._id,
+          batchId: new ObjectId(batchId),
+          status: 'pending',
+          providerId: item.providerId,
+          modelId: item.modelId,
+          createdAt: new Date()
+        } as any);
+      }
+    }
+
+    if (lineupChanged) {
+      await batchRepository.update(batchId, { 
+        candidateIds: Array.from(batchCandidateIds).map(id => new ObjectId(id)) 
+      });
+    }
   }
 }
 

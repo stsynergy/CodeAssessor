@@ -25,7 +25,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { _id, ...data } = body;
+    const { _id, action, ...data } = body;
+
+    if (action === "import") {
+      await subjectService.importSubjects(data.batchId, data.items || []);
+      return NextResponse.json({ success: true });
+    }
 
     if (_id) {
       const success = await subjectService.updateSubject(_id, data);

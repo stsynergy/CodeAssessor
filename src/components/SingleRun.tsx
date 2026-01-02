@@ -166,36 +166,16 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
     if (!thingName || !report) return;
     setIsSaving(true);
     try {
-      // 1. Find or create a "Playground" batch
-      let batchResponse = await fetch("/api/batches");
-      let batches = await batchResponse.json();
-      let playgroundBatch = batches.find((b: any) => b.name === "Playground");
-      
-      if (!playgroundBatch) {
-        const createBatchRes = await fetch("/api/batches", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "Playground", candidateIds: [], createdAt: new Date() }),
-        });
-        playgroundBatch = await createBatchRes.json();
-      }
-
-      // 1.5 Ensure candidates are in the lineup
-      const snippetCandidateIds = snippets.map(s => s.candidateId);
-      const existingCandidateIds = playgroundBatch.candidateIds || [];
-      // Normalize to strings for comparison
-      const existingIdsSet = new Set(existingCandidateIds.map((id: any) => id.toString()));
-      const missingIds = snippetCandidateIds.filter(id => !existingIdsSet.has(id.toString()));
-
-      if (missingIds.length > 0) {
-        const newCandidateIds = [...existingCandidateIds, ...missingIds];
-        const updateBatchRes = await fetch("/api/batches", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...playgroundBatch, candidateIds: newCandidateIds }),
-        });
-        playgroundBatch = await updateBatchRes.json();
-      }
+      // 1. Get or create "Playground" batch and ensure candidates are in lineup
+      const batchResponse = await fetch("/api/batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "getOrCreatePlayground", 
+          candidateIds: snippets.map(s => s.candidateId) 
+        }),
+      });
+      const playgroundBatch = await batchResponse.json();
 
       // 2. Create a Subject
       const subject: Partial<Subject> = {

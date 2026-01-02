@@ -24,7 +24,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { _id, ...data } = body;
+    const { _id, action, ...data } = body;
+
+    if (action === "getOrCreatePlayground") {
+      const batch = await batchService.getOrCreatePlaygroundBatch(data.candidateIds || []);
+      return NextResponse.json(batch);
+    }
 
     if (_id) {
       const success = await batchService.updateBatch(_id, data);

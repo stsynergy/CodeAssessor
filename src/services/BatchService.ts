@@ -25,6 +25,34 @@ export class BatchService {
     return batchRepository.delete(id);
   }
 
+  async getOrCreatePlaygroundBatch(candidateIds: string[]): Promise<WithId<Batch>> {
+    const batches = await batchRepository.findAll({ name: "Playground" } as any);
+    let playgroundBatch = batches[0];
+
+    if (!playgroundBatch) {
+      playgroundBatch = await batchRepository.create({
+        name: "Playground",
+        candidateIds: candidateIds.map(id => new ObjectId(id)),
+        createdAt: new Date(),
+      } as any);
+    } else {
+      // Ensure all candidates are in the lineup
+      const existingIdsSet = new Set(playgroundBatch.candidateIds.map((id: any) => id.toString()));
+      const missingIds = candidateIds.filter(id => !existingIdsSet.has(id));
+
+      if (missingIds.length > 0) {
+        const newCandidateIds = [
+          ...playgroundBatch.candidateIds,
+          ...missingIds.map(id => new ObjectId(id))
+        ];
+        await batchRepository.update(playgroundBatch._id.toString(), { candidateIds: newCandidateIds });
+        playgroundBatch.candidateIds = newCandidateIds;
+      }
+    }
+
+    return playgroundBatch;
+  }
+
   private prepareBatchData(data: Partial<Batch>): Partial<Batch> {
     const prepared = { ...data };
     if (prepared.candidateIds) {

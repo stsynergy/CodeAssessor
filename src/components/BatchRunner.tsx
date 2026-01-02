@@ -435,55 +435,58 @@ export const BatchRunner: React.FC = () => {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (event) => {
+      const content = event.target?.result as string;
+      
+      if (!content || content.trim() === "") {
+        alert("The selected file is empty.");
+        e.target.value = "";
+        return;
+      }
+
+      let json;
       try {
-        const json = JSON.parse(event.target?.result as string);
+        json = JSON.parse(content);
+      } catch (parseError) {
+        alert("Invalid JSON format. Please check your file syntax.");
+        e.target.value = "";
+        return;
+      }
+
+      try {
         const items = Array.isArray(json) ? json : [json];
         
-        for (const item of items) {
-          // Map incoming snippets to global candidates by name
-          const mappedSnippets: Snippet[] = [];
-          if (Array.isArray(item.snippets)) {
-            for (const s of item.snippets) {
-              const globalCand = allCandidates.find(c => c.name.toLowerCase() === s.name.toLowerCase());
-              if (globalCand) {
-                mappedSnippets.push({
-                  candidateId: globalCand._id!,
-                  content: s.content
-                });
-                // Ensure candidate is in the batch lineup
-                if (!selectedBatch.candidateIds.includes(globalCand._id!)) {
-                  await toggleCandidateInBatch(globalCand._id!);
-                }
-              }
-            }
-          }
+        // 1. Delegate import logic to server
+        const response = await fetch("/api/subjects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            action: "import", 
+            batchId: selectedBatch._id, 
+            items 
+          }),
+        });
 
-          const subject: Partial<Subject> = {
-            batchId: selectedBatch._id!,
-            thingName: item.thingName || "Untitled",
-            context: item.context || "",
-            language: item.language || "javascript",
-            trialsNeeded: item.trialsNeeded || 3,
-            snippets: mappedSnippets,
-            providerId: item.providerId || selectedProviderId,
-            modelId: item.modelId || selectedModelId,
-            createdAt: new Date()
-          };
-          
-          const response = await fetch("/api/subjects", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(subject),
-          });
-          const savedSubject = await response.json();
-          for (let i = 0; i < (subject.trialsNeeded || 3); i++) {
-            await createTrial(savedSubject._id!);
-          }
+        if (!response.ok) {
+          const errorData = await response.json();
+          alert(errorData.error || "Failed to import tasks onto the server.");
+          return;
         }
+
+        // 2. Refresh lineup if needed
+        const batchRes = await fetch(`/api/batches?id=${selectedBatch._id}`);
+        const updatedBatch = await batchRes.json();
+        setSelectedBatch(updatedBatch);
+        setBatches(prev => prev.map(b => b._id === updatedBatch._id ? updatedBatch : b));
+
+        // 3. Refresh subjects list
         fetchSubjects(selectedBatch._id!);
-      } catch (error) {
+        alert("Import successful!");
+      } catch (error: any) {
         console.error("Failed to import subjects:", error);
-        alert("Invalid JSON or import error.");
+        alert("An unexpected error occurred during import.");
+      } finally {
+        // Reset input so the same file can be selected again
+        e.target.value = "";
       }
     };
     reader.readAsText(file);
