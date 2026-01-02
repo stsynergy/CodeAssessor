@@ -48,18 +48,29 @@ Code Assessor is a Next.js application designed to perform deep-dive architectur
    npm install
    ```
 
-3. **Configure the API Keys & DB**:
-   Create `config/.api.ts` (use `config/api.ts.example` as a template):
-   ```typescript
-   export const OPENAI_API_KEY = "sk-...";
-   export const MONGODB_URI = "mongodb://localhost:27017/code-assessor";
-   // ... other keys ...
+3. **Configure the Environment**:
+   Create a `.env.local` file in the root directory. You can use `src/config/env.example` as a template:
+   ```bash
+   cp src/config/env.example .env.local
+   # Then edit .env.local with your keys
    ```
 
 4. **Run the development server**:
    ```bash
    npm run dev
    ```
+
+## 🏗️ Architecture
+
+Code Assessor follows a clean, service-oriented architecture:
+
+- **`src/app/api`**: Thin Route Handlers for HTTP communication.
+- **`src/services`**: Application logic layer (LLM orchestration, domain workflows).
+- **`src/repositories`**: Data access layer for MongoDB.
+- **`src/components`**: React UI components.
+- **`src/types`**: Shared domain models.
+- **`src/lib`**: Low-level infrastructure.
+
 
 ## 📝 Batch Runner Workflow
 

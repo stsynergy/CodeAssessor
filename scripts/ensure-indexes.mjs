@@ -56,10 +56,6 @@ async function run() {
     await db.collection('candidates').createIndex({ name: 1 }, { unique: true });
     console.log("- candidates: { name: 1 } (unique)");
 
-    // Assessments (Sessions)
-    await db.collection('assessments').createIndex({ batchId: 1, createdAt: -1 });
-    console.log("- assessments: { batchId: 1, createdAt: -1 }");
-
     console.log("Indexes ensured successfully.");
   } catch (err) {
     console.error("Error ensuring indexes:", err);

@@ -17,7 +17,7 @@ export interface AssessmentResult {
   providerId: string;
   modelId: string;
   reportMarkdown: string;
-  scores: Record<string, string>; // Candidate ID -> Raw Score String (e.g. "4/15")
+  scores: Record<string, string>; // Candidate ID or Name -> Rank/Score
   timestamp: Date;
 }
 

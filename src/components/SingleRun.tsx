@@ -70,6 +70,10 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
             { candidateId: data[0]._id!, content: "" },
             { candidateId: data[1]._id!, content: "" },
           ]);
+        } else if (data.length === 1) {
+          setSnippets([
+            { candidateId: data[0]._id!, content: "" }
+          ]);
         }
       }
     } catch (error) {
@@ -102,23 +106,28 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
 
   const addSnippet = () => {
     if (allCandidates.length === 0) return;
+    
+    // Find first candidate not already in snippets
+    const usedIds = new Set(snippets.map(s => s.candidateId));
+    const nextCandidate = allCandidates.find(c => !usedIds.has(c._id!)) || allCandidates[0];
+
     setSnippets([
       ...snippets,
       {
-        candidateId: allCandidates[0]._id!,
+        candidateId: nextCandidate._id!,
         content: "",
       },
     ]);
   };
 
-  const removeSnippet = (candidateId: string) => {
+  const removeSnippet = (index: number) => {
     if (snippets.length <= 2) return;
-    setSnippets(snippets.filter((s) => s.candidateId !== candidateId));
+    setSnippets(snippets.filter((_, i) => i !== index));
   };
 
-  const updateSnippet = (candidateId: string, updates: Partial<Snippet>) => {
+  const updateSnippet = (index: number, updates: Partial<Snippet>) => {
     setSnippets(
-      snippets.map((s) => (s.candidateId === candidateId ? { ...s, ...updates } : s))
+      snippets.map((s, i) => (i === index ? { ...s, ...updates } : s))
     );
   };
 
@@ -166,9 +175,26 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
         const createBatchRes = await fetch("/api/batches", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "Playground", createdAt: new Date() }),
+          body: JSON.stringify({ name: "Playground", candidateIds: [], createdAt: new Date() }),
         });
         playgroundBatch = await createBatchRes.json();
+      }
+
+      // 1.5 Ensure candidates are in the lineup
+      const snippetCandidateIds = snippets.map(s => s.candidateId);
+      const existingCandidateIds = playgroundBatch.candidateIds || [];
+      // Normalize to strings for comparison
+      const existingIdsSet = new Set(existingCandidateIds.map((id: any) => id.toString()));
+      const missingIds = snippetCandidateIds.filter(id => !existingIdsSet.has(id.toString()));
+
+      if (missingIds.length > 0) {
+        const newCandidateIds = [...existingCandidateIds, ...missingIds];
+        const updateBatchRes = await fetch("/api/batches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...playgroundBatch, candidateIds: newCandidateIds }),
+        });
+        playgroundBatch = await updateBatchRes.json();
       }
 
       // 2. Create a Subject
@@ -179,6 +205,8 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
         language: selectedLanguage,
         snippets: snippets.map(s => ({ ...s, language: selectedLanguage })),
         trialsNeeded: 1,
+        providerId: selectedProviderId,
+        modelId: selectedModelId,
         createdAt: new Date()
       };
 
@@ -194,6 +222,8 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
         subjectId: savedSubject._id,
         batchId: playgroundBatch._id,
         status: 'completed',
+        providerId: selectedProviderId,
+        modelId: selectedModelId,
         result: {
           providerId: selectedProviderId,
           modelId: selectedModelId,
@@ -333,7 +363,7 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
               >
                 {snippets.length > 2 && (
                   <button
-                    onClick={() => removeSnippet(snippet.candidateId)}
+                    onClick={() => removeSnippet(idx)}
                     className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 transition-colors z-10"
                   >
                     <Trash2 size={18} />
@@ -346,18 +376,23 @@ export const SingleRun: React.FC<SingleRunProps> = ({ onSave }) => {
                     <select
                       className="flex-1 p-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-sm"
                       value={snippet.candidateId}
-                      onChange={(e) => updateSnippet(snippet.candidateId, { candidateId: e.target.value })}
+                      onChange={(e) => updateSnippet(idx, { candidateId: e.target.value })}
                     >
-                      {allCandidates.map(c => (
-                        <option key={c._id} value={c._id}>{c.name}</option>
-                      ))}
+                      {allCandidates.map(c => {
+                        const isSelectedElsewhere = snippets.some((s, i) => i !== idx && s.candidateId === c._id);
+                        return (
+                          <option key={c._id} value={c._id} disabled={isSelectedElsewhere}>
+                            {c.name} {isSelectedElsewhere ? "(Selected)" : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
                   <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden font-mono text-sm bg-zinc-50 dark:bg-zinc-950">
                     <Editor
                       value={snippet.content}
-                      onValueChange={(content) => updateSnippet(snippet.candidateId, { content })}
+                      onValueChange={(content) => updateSnippet(idx, { content })}
                       highlight={(code) => {
                         const grammar = languages[selectedLanguage] || languages.javascript;
                         return highlight(code, grammar, selectedLanguage);

@@ -638,8 +638,8 @@ export const BatchRunner: React.FC = () => {
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase text-zinc-400">Lineup</label>
               <div className="flex flex-wrap gap-2">
-                {selectedBatch.candidateIds.length > 0 ? (
-                  selectedBatch.candidateIds.map(cid => {
+                {(selectedBatch.candidateIds || []).length > 0 ? (
+                  (selectedBatch.candidateIds || []).map(cid => {
                     const cand = allCandidates.find(c => c._id === cid);
                     return (
                       <div key={cid} className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full text-[10px] font-bold">
@@ -660,7 +660,7 @@ export const BatchRunner: React.FC = () => {
               </div>
               <button 
                 onClick={addManualSubject} 
-                disabled={!selectedBatch.candidateIds || selectedBatch.candidateIds.length === 0}
+                disabled={!(selectedBatch.candidateIds || []) || (selectedBatch.candidateIds || []).length === 0}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-medium text-sm disabled:opacity-50"
               >
                 Create Task
@@ -806,7 +806,7 @@ export const BatchRunner: React.FC = () => {
                           </div>
                         );
                       })}
-                      {selectedBatch.candidateIds.length === 0 && (
+                      {((selectedBatch.candidateIds || [])).length === 0 && (
                         <p className="text-xs text-zinc-400 italic">No candidates selected for this project.</p>
                       )}
                     </div>
