@@ -1,4 +1,4 @@
-# Code Assessor 🚀
+# Code Assessor
 
 Code Assessor is a Next.js application designed to perform deep-dive architectural assessments of multiple code implementations. It supports multiple LLM providers (OpenAI, Anthropic, Google, Grok) to provide rigorous, objective comparisons across metrics like Integrity, DX, UX, and Data Flow.
 
@@ -39,8 +39,8 @@ Code Assessor is a Next.js application designed to perform deep-dive architectur
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/code-assessor.git
-   cd code-assessor
+   git clone https://github.com/stsynergy/CodeAssessor.git
+   cd CodeAssessor
    ```
 
 2. **Install dependencies**:
@@ -52,13 +52,23 @@ Code Assessor is a Next.js application designed to perform deep-dive architectur
    Create a `.env.local` file in the root directory. You can use `src/config/env.example` as a template:
    ```bash
    cp src/config/env.example .env.local
-   # Then edit .env.local with your keys
+   # Then edit .env.local with your keys, ollama nad db config
+   ```
+   | Note: You need to setup DB and at least one provider API key.
+
+4. **Initialize Database Indexes**:
+   Run the following command to set up necessary database indexes and constraints:
+   ```bash
+   npm run db:indexes
    ```
 
-4. **Run the development server**:
+5. **Run the development server**:
    ```bash
    npm run dev
    ```
+
+
+6. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 ## 🏗️ Architecture
 
@@ -72,49 +82,67 @@ Code Assessor follows a clean, service-oriented architecture:
 - **`src/lib`**: Low-level infrastructure.
 
 
-## 📝 Batch Runner Workflow
+## 📝 Usage & Workflow
 
-The Batch Runner is designed for rigorous benchmarking where you control the quality of every assessment.
+Code Assessor is optimized for **Human-in-the-Loop Benchmarking**. While a **Single Run** tool is available for quick testing, the core value lies in the multi-trial statistical analysis provided by the **Batch Runner**.
 
-1. **Create a Batch**: Give your test suite a name.
-2. **Input Data**: 
-   - **Manual**: Add items one by one in the UI.
-   - **Import JSON**: Bulk load multiple assessments using a JSON file.
-3. **Trigger Assessment**: Run the AI for any item. It will generate a draft report.
-4. **Review & Rerun**: 
-   - If the AI result is "messy" or incorrect, hit **Rerun** to try again.
-   - You can change the model between reruns to see which one performs better.
-5. **Finalize**: Click **Approve & Finalize** to save the result permanently. Only finalized results appear in the Statistics dashboard.
+### 1. The Benchmark Suite (Main Workflow)
+The primary workflow follows a **Setup → Execute → Review → Analyze** loop:
 
-### JSON Import Schema
+*   **Phase A: Setup (Candidates & Batches)**
+    1.  **Define Candidates**: Go to the **Candidates** registry and define your global entities (e.g., "Senior Dev A", "Model X", "Model Y", etc.).
+
+         **Make sure the candidate names are not recognizable by the judge models!**
+         You can write real model names into description field.
+
+    2.  **Create a Batch**: Create a **new Project** (Batch) and Select candidates that will participate in this specific suite (**Menage Lineup**).
+
+*   **Phase B: Data Entry**
+
+      3.  **Define Tasks**: **Add Task** or problem you want to assess.
+      
+      - **Manual**: Enter the "Thing Name", and "Context", then paste code snippets for each candidate.
+      
+      - **Bulk Import**: Use a JSON file to load multiple subjects at once (see [JSON Import Schema](#json-import-schema)).
+
+
+*   **Phase C: Execution (Trials & Reruns)**
+      
+      4.  **Trigger Trials**: Each subject automatically generates multiple **Trials** (e.g., 3-5). You can assign different LLM judges to different trials to ensure objective cross-model comparison.
+      **Run AI** for each trial.
+
+      5.  **Manual Vetting**: AI results are initially saved as drafts. Review the report. If the AI hallucinated or the ranking is "messy", hit **Rerun AI** to try again.
+
+      6.  **Finalize**: Click **Approve & Finalize** to save the result permanently. Only finalized trials are included in the global statistics.
+
+*   **Phase D: Analysis**
+
+    7.  **Dashboard**: Visit the **Statistics** view to see the **Normalized Borda Count** scores. This aggregates performance across all subjects and trials to show which candidate is architecturally superior.
+
+### 2. Quick Testing (Single Run)
+Use the **Single Run** view for:
+- **Sanity Checks**: Verifying that your API keys and LLM providers are connected correctly.
+- **Prompt Preview**: Testing how the "Senior Architect" judge handles a specific code pattern before adding it to a large batch.
+- **Ad-hoc Reports**: Generating a quick one-off PDF report that doesn't need to be tracked statistically.
+
+### 📥 JSON Import Schema
+To bulk-load subjects into a batch, use the following format. Note that the `name` in snippets must match a name in your **Global Candidate Registry**.
+
 ```json
 [
   {
     "thingName": "Auth Component",
-    "context": "React component for user login.",
+    "context": "Implement a JWT-based login with refresh token support.",
     "language": "typescript",
+    "trialsNeeded": 3,
     "snippets": [
-      { "id": "1", "name": "C45SO", "content": "..." },
-      { "id": "2", "name": "C45OP", "content": "..." }
+      { "name": "Senior Dev A", "content": "..." },
+      { "name": "Claude 3.5", "content": "..." }
     ]
   }
 ]
 ```
 
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-## 📝 Usage
-
-1. **Configuration**: Select your preferred **LLM Provider** and **Model** from the top configuration panel.
-2. **The Thing Name**: Enter the name of the component or service you are assessing (e.g., "Auth Service").
-3. **The Context**: Provide background on the architectural requirements or constraints.
-4. **Implementations**: 
-   - Name each implementation (e.g., "Standard Implementation", "Optimized Hook").
-   - Select the language (JS/Python).
-   - Paste your code into the editor.
-5. **Generate**: Click "Generate Architectural Report".
-6. **Review & Export**: Once the AI generates the report, review the ranking and tiered categories. Click "Export as PDF" to save the report for your team.
 
 ## 📜 Assessment Methodology
 
